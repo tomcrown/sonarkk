@@ -25,6 +25,10 @@ logs/
 
 # Test coverage
 coverage/
+
+# Backtest cache (large, regenerable)
+packages/backtest/.cache/
 SPEC.md
 CLAUDE.md
 reports/phase-0.md
+reports/phase-1.md
