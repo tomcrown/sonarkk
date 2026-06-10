@@ -1,0 +1,30 @@
+node_modules/
+dist/
+build/
+.env
+*.tgz
+
+# Sui build artifacts
+contracts/*/build/
+contracts/*/.move/
+
+# Prisma
+packages/core/prisma/dev.db
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage/
+SPEC.md
+CLAUDE.md
+reports/phase-0.md

@@ -1,0 +1,110 @@
+// Sonark data layer — Supabase Postgres via Prisma
+// Run: pnpm --filter @sonarkk/core exec prisma db push
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL")
+}
+
+// ---- Strategy registry ----
+model Strategy {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  type        StrategyType
+  active      Boolean  @default(false)
+  vaultId     String?  @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  backtestResults BacktestResult[]
+  keeperRuns      KeeperRun[]
+  leaderboard     LeaderboardEntry?
+}
+
+enum StrategyType {
+  PLP_SUPPLIER        // Strategy 1
+  HEDGED_PLP          // Strategy 2
+  SMART_VAULT         // Strategy 3
+  PRINCIPAL_PROTECTED // Strategy 4
+  RANGE_ROLL          // Strategy 5
+  VOL_TARGETED_RANGE  // Strategy 6
+  CROSS_VENUE_ARB     // Strategy 7
+}
+
+// ---- Backtest results (Phase 1 output) ----
+model BacktestResult {
+  id            String   @id @default(cuid())
+  strategyId    String
+  strategy      Strategy @relation(fields: [strategyId], references: [id])
+  runAt         DateTime @default(now())
+  periodStart   DateTime
+  periodEnd     DateTime
+  totalRounds   Int
+  winRate       Float
+  avgPnlBps     Float
+  maxDrawdownBps Float
+  spreadCostBps Float
+  sharpeRatio   Float?
+  survives      Boolean
+  notes         String?
+
+  @@index([strategyId])
+}
+
+// ---- Keeper execution log (Phase 4) ----
+model KeeperRun {
+  id           String       @id @default(cuid())
+  strategyId   String
+  strategy     Strategy     @relation(fields: [strategyId], references: [id])
+  oracleId     String
+  action       KeeperAction
+  txDigest     String?      @unique
+  success      Boolean
+  errorMsg     String?
+  gasUsed      BigInt?
+  executedAt   DateTime     @default(now())
+
+  @@index([strategyId])
+  @@index([oracleId])
+}
+
+enum KeeperAction {
+  SUPPLY
+  WITHDRAW
+  MINT
+  MINT_RANGE
+  REDEEM
+  REDEEM_RANGE
+  HEDGE_SPOT
+  SKIP
+}
+
+// ---- Leaderboard (Phase 5) ----
+model LeaderboardEntry {
+  id          String   @id @default(cuid())
+  strategyId  String   @unique
+  strategy    Strategy @relation(fields: [strategyId], references: [id])
+  rank        Int
+  tvlDusdc    BigInt
+  apyBps      Float
+  copiers     Int      @default(0)
+  updatedAt   DateTime @updatedAt
+}
+
+// ---- Copy / provenance ----
+model CopyRelation {
+  id            String   @id @default(cuid())
+  followerAddr  String
+  strategyId    String
+  copiedAt      DateTime @default(now())
+  uncopiedAt    DateTime?
+
+  @@unique([followerAddr, strategyId])
+  @@index([strategyId])
+}
