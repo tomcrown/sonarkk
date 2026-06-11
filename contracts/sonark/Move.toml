@@ -1,0 +1,12 @@
+[package]
+name = "sonark"
+edition = "2024"
+
+[dependencies]
+# Sui framework is bundled with the CLI — no explicit entry needed.
+# The Predict package types (PLP, PredictManager, OracleSVI) are accessed
+# generically through type parameters and Bag, so no on-chain dependency required.
+# Phase 4 (keeper) wires the concrete Predict calls in TypeScript PTBs.
+
+[addresses]
+sonark = "0x0"
