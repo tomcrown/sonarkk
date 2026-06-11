@@ -1,4 +1,10 @@
-import 'dotenv/config';
+import { config } from 'dotenv';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+// Load the root .env regardless of process.cwd() (pnpm sets cwd to the package dir).
+const _dir = dirname(fileURLToPath(import.meta.url));
+config({ path: resolve(_dir, '../../../.env') });
 import { z } from 'zod';
 
 const envSchema = z.object({
@@ -35,10 +41,13 @@ const envSchema = z.object({
   ),
 
   DATABASE_URL: z.string().optional(),
-  SUPABASE_URL: z.string().url().optional(),
+  SUPABASE_URL: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
   SUPABASE_ANON_KEY: z.string().optional(),
 
   KEEPER_PRIVATE_KEY: z.string().optional(),
+
+  // Set after `sui client publish` in the phase 2 integration test.
+  SONARK_PACKAGE: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

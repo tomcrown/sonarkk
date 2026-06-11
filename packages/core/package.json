@@ -16,7 +16,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
     "test": "node --experimental-vm-modules ../../node_modules/.bin/jest",
-    "smoke": "tsx src/smoke.ts"
+    "smoke": "tsx src/smoke.ts",
+    "integration-phase2": "tsx src/integration-test-phase2.ts"
   },
   "dependencies": {
     "@mysten/deepbook-v3": "^1.4.1",

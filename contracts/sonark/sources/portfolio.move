@@ -455,8 +455,9 @@ public fun take_for_supply<Q>(
 
 /// Store LP tokens received from predict::supply back into the portfolio.
 /// Generic over Lp — works with PLP today, any future LP token type.
-/// Requires PolicyCap so only the authorized keeper can credit LP tokens.
-public fun store_lp<Q, Lp: store>(
+/// No `store` constraint on Lp: Balance<phantom Lp> always has `store` via phantom.
+/// PLP is an OTW type with only `drop`, so `Lp: store` would wrongly reject it.
+public fun store_lp<Q, Lp>(
     portfolio: &mut SonarkPortfolio<Q>,
     lp_coin: Coin<Lp>,
     policy: &PolicyCap,
@@ -476,7 +477,8 @@ public fun store_lp<Q, Lp: store>(
 /// Take LP tokens from the portfolio to redeem via predict::withdraw<Quote>.
 /// The caller (keeper PTB) passes this Coin to predict::withdraw.
 /// Removes the Bag entry when balance reaches zero, so the Bag stays clean.
-public fun take_lp<Q, Lp: store>(
+/// No `store` constraint on Lp for same reason as store_lp — PLP has only `drop`.
+public fun take_lp<Q, Lp>(
     portfolio: &mut SonarkPortfolio<Q>,
     amount: u64,
     policy: &PolicyCap,
