@@ -103,6 +103,14 @@ export function sizeHedgedPlp(
 /**
  * ③ Smart Vault (Index)
  * Allocates across ①②. Weights: 60% Hedged-PLP, 40% PLP Supplier.
+ *
+ * 60/40 rationale: Hedged-PLP earns the same spread as PLP Supplier but adds a delta hedge
+ * that materially reduces worst-5% drawdown at every vol regime (Phase 3 Rule 5 finding).
+ * A 60% weight tilts toward the hedged position as primary without requiring full hedge budget —
+ * at typical vault sizes the 40% PLP leg can run without any hedge, keeping friction manageable.
+ * This default can be overridden per vault; a vault with sufficient hedge_budget should tilt
+ * higher (toward 80/20) once Phase 4 keeper exposes the hedge_budget config.
+ *
  * Returns a single "total supply size" — the keeper splits it into two TXs.
  */
 export function sizeSmartVault(

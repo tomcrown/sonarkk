@@ -5,21 +5,22 @@
  * nav_per_share = total_nav × 1e9 / total_shares
  *
  * quote_balance: raw DUSDC sitting in the portfolio Balance<Quote>.
- * lp_value_in_dusdc: current redemption value of held PLP tokens.
- *   Computed by simulating predict::withdraw(1 PLP) → get DUSDC per PLP,
- *   then multiply by total held PLP. This DevInspect path avoids
- *   state changes and is accurate to the current vault_value().
+ *
+ * lp_value_in_dusdc: proportional redemption value of held PLP tokens.
+ *   CORRECT formula: lp_value = portfolio_plp_balance × vault_value / plp_total_supply
+ *   where:
+ *     vault_value      = predict::balance<DUSDC>(&Predict) — total DUSDC in the Predict vault
+ *     plp_total_supply = total PLP outstanding (from Predict object content via GraphQL)
+ *   This gives the portfolio's proportional share of the vault. If the portfolio holds
+ *   1% of all PLP, its LP value is 1% of vault_value — NOT 100% of vault_value.
+ *
  * bettor_mtm: mark-to-market of open bettor positions (strategies ⑤⑥⑦).
- *   Computed by calling predict::get_trade_amounts for each open position
- *   (returns payout if settled now). Settled positions are 0.
+ *   Computed by calling predict::get_trade_amounts for each open position.
  *
  * Principal-Protected adjustment:
  *   available_balance = quote_balance - locked_principal - yield_accumulated
- *   The NAV still includes principal and yield in total_nav (they are real DUSDC),
- *   but available_balance() is what the keeper may use for new positions.
  *
  * All amounts use the on-chain precision: 6 decimals for DUSDC (1e6 per unit).
- * 1 DUSDC = 1_000_000 raw units on-chain.
  * nav_per_share is scaled 1e9 to preserve precision in integer arithmetic on-chain.
  */
 
@@ -32,7 +33,7 @@ import type { CoreClient } from '@mysten/sui/client';
 export interface NavComponents {
   quote_balance_raw: bigint;    // raw DUSDC from portfolio::quote_balance
   lp_balance_raw: bigint;       // raw PLP from portfolio::lp_balance
-  lp_value_raw: bigint;         // DUSDC value of lp_balance (computed below)
+  lp_value_raw: bigint;         // DUSDC value: lp_balance × vault_value / plp_total_supply
   bettor_mtm_raw: bigint;       // MTM of open bettor positions
   total_nav_raw: bigint;        // quote_balance + lp_value + bettor_mtm
   total_shares: bigint;         // from portfolio::total_shares
@@ -40,6 +41,8 @@ export interface NavComponents {
   locked_principal_raw: bigint; // for principal-protected strategy
   yield_accumulated_raw: bigint;
   available_balance_raw: bigint; // quote_balance - locked_principal - yield_accumulated
+  vault_value_raw: bigint;       // predict::balance<DUSDC> at computation time
+  plp_total_supply_raw: bigint;  // PLP total supply at computation time
 }
 
 /** A single open bettor position returned by the predict-server. */
@@ -71,6 +74,18 @@ export interface NavInputs {
   locked_principal_raw: bigint;
   /** Accumulated yield (principal-protected strategy only). 0n if not used. */
   yield_accumulated_raw: bigint;
+  /**
+   * Total DUSDC value in the Predict vault.
+   * Required. Obtain via fetchPredictVaultState() before calling computeNav().
+   * Used as the numerator scaling in: lp_value = lp_balance × vault_value / plp_total_supply.
+   */
+  vault_value_raw: bigint;
+  /**
+   * Total PLP tokens outstanding (denominator in LP value formula).
+   * Required. Obtain via fetchPredictVaultState() before calling computeNav().
+   * Must not be approximated — incorrect value inflates or deflates LP value.
+   */
+  plp_total_supply_raw: bigint;
 }
 
 // ── Read helpers ───────────────────────────────────────────────────────────
@@ -96,67 +111,85 @@ async function readU64(
   return Buffer.from(bcs).readBigUInt64LE(0) as unknown as bigint;
 }
 
+// ── Chain reads for LP value inputs ──────────────────────────────────────
+
 /**
- * Compute the DUSDC redemption value of one PLP token via DevInspect.
+ * Verified Predict object JSON structure (predict-testnet-4-16):
  *
- * We simulate withdrawing 1 raw PLP unit and observe the DUSDC returned.
- * Multiply by total_plp_raw to get the vault's LP value in DUSDC.
+ *   vault.balance               → total DUSDC in vault (vault_value_raw)
+ *   treasury_cap.total_supply.value → total PLP outstanding (plp_total_supply_raw)
  *
- * NOTE: this is an approximation that assumes linearity of the withdrawal
- * curve. For practical vault sizes the approximation is accurate because
- * Predict's withdrawal limiter caps slippage for small amounts relative
- * to the vault. The keeper logs any deviation > 0.1%.
+ * vault.balance and plp supply are read via a single gRPC getObject call on the
+ * Predict shared object with include: { json: true }. No DevInspect function
+ * named "predict::balance" exists in the contract — the data lives in the object.
  */
-async function computeLpValueRaw(
-  client: CoreClient,
-  sender: string,
-  predict_id: string,
-  predict_package: string,
-  dusdc_type: string,
-  plp_type: string,
-  total_plp_raw: bigint,
-): Promise<bigint> {
-  if (total_plp_raw === 0n) return 0n;
 
-  // Simulate withdrawing 1_000 raw PLP (larger unit reduces integer division error).
-  // predict::withdraw<Quote>(&mut Predict, Coin<PLP>, ctx): Coin<Quote>
-  const PROBE_PLP = 1_000n;
-  const tx = new Transaction();
-  tx.setSender(sender);
-  const probe_coin = tx.splitCoins(tx.gas, [0]);
-  // We don't actually have PLP here — this path is for a read-only estimate.
-  // Use predict::available_withdrawal instead which returns the DUSDC value.
-  // Function: predict::available_withdrawal(&Predict): u64
-  tx.moveCall({
-    target: `${predict_package}::predict::available_withdrawal`,
-    typeArguments: [dusdc_type],
-    arguments: [tx.object(predict_id)],
-  });
+type PredictJson = {
+  vault?: { balance?: string };
+  treasury_cap?: { total_supply?: { value?: string } };
+};
 
-  const sim = await client.simulateTransaction({ transaction: tx, include: { commandResults: true } });
-  // available_withdrawal returns the maximum DUSDC withdrawable for the current PLP supply.
-  // We need total PLP supply to get PLP→DUSDC rate.
-  // Fallback: use vault_value() / total_plp_supply approach.
-  // This is a best-effort estimate; the exact value requires on-chain withdrawal.
-
-  if (sim.$kind === 'FailedTransaction') {
-    // Can't determine LP value — return 0 and log.
-    console.warn('[nav] available_withdrawal DevInspect failed, LP value = 0 (conservative)');
-    return 0n;
+function parsePredictJson(json: PredictJson): {
+  vault_value_raw: bigint;
+  plp_total_supply_raw: bigint;
+} {
+  const vault_balance = json?.vault?.balance;
+  if (!vault_balance) {
+    throw new Error(
+      `predict object missing vault.balance field. ` +
+      `top-level keys: ${Object.keys(json ?? {}).join(', ')}`,
+    );
   }
 
-  const bcs = sim.commandResults?.[0]?.returnValues?.[0]?.bcs;
-  if (!bcs) return 0n;
+  const plp_supply = json?.treasury_cap?.total_supply?.value;
+  if (!plp_supply) {
+    throw new Error(
+      `predict object missing treasury_cap.total_supply.value field. ` +
+      `treasury_cap=${JSON.stringify(json?.treasury_cap)}`,
+    );
+  }
 
-  const available_raw = Buffer.from(bcs).readBigUInt64LE(0) as unknown as bigint;
-  // available_withdrawal = max DUSDC the entire PLP supply can redeem.
-  // We don't have total PLP supply here — use a proportional estimate.
-  // Rate = available_raw (max) / vault_total_plp... we don't have that either.
-  // Conservative path: available_withdrawal * (held_plp / total_plp_supply).
-  // Without total_plp_supply we return available_raw as an upper bound for the
-  // keeper's information only. The Phase 5 on-chain audit will verify.
-  console.warn('[nav] LP value estimate uses available_withdrawal as upper bound — exact value requires full PLP supply');
-  return available_raw;
+  return {
+    vault_value_raw: BigInt(vault_balance),
+    plp_total_supply_raw: BigInt(plp_supply),
+  };
+}
+
+/**
+ * Read both vault_value_raw and plp_total_supply_raw from the Predict shared object.
+ *
+ * Uses a single gRPC getObject call with { include: { json: true } } to read the
+ * object's JSON content, then extracts:
+ *   vault_value_raw      = json.vault.balance
+ *   plp_total_supply_raw = json.treasury_cap.total_supply.value
+ *
+ * These are the two inputs for the correct LP value formula:
+ *   lp_value = portfolio_plp_balance × vault_value_raw / plp_total_supply_raw
+ *
+ * Throws on any failure — never silently returns wrong data.
+ *
+ * @param coreClient    The gRPC CoreClient (from SuiGrpcClient.core).
+ * @param predictId     Predict shared object ID.
+ */
+export async function fetchPredictVaultState(
+  coreClient: CoreClient,
+  predictId: string,
+): Promise<{ vault_value_raw: bigint; plp_total_supply_raw: bigint }> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await (coreClient as any).getObject({
+    objectId: predictId,
+    include: { json: true },
+  });
+
+  const json = result?.object?.json ?? result?.json;
+  if (!json || typeof json !== 'object') {
+    throw new Error(
+      `getObject(${predictId}) returned no JSON content. ` +
+      `Ensure the node supports the json include option.`,
+    );
+  }
+
+  return parsePredictJson(json as PredictJson);
 }
 
 // ── Main NAV computation ───────────────────────────────────────────────────
@@ -166,6 +199,9 @@ async function computeLpValueRaw(
  *
  * All reads are DevInspect (no state changes). The result is used by the
  * keeper to call update_nav on-chain before processing withdrawals.
+ *
+ * Callers must first obtain vault_value_raw and plp_total_supply_raw via
+ * fetchPredictVaultState() and pass them in NavInputs.
  */
 export async function computeNav(
   client: CoreClient,
@@ -173,15 +209,15 @@ export async function computeNav(
 ): Promise<NavComponents> {
   const {
     portfolio_id,
-    predict_id,
     sonark_package,
-    predict_package,
     dusdc_type,
     plp_type,
     sender,
     open_bettor_positions,
     locked_principal_raw,
     yield_accumulated_raw,
+    vault_value_raw,
+    plp_total_supply_raw,
   } = inputs;
 
   // Read on-chain portfolio state in parallel.
@@ -191,11 +227,16 @@ export async function computeNav(
     readU64(client, sender, `${sonark_package}::portfolio::total_shares`, [dusdc_type], portfolio_id),
   ]);
 
-  // Compute LP value.
-  const lp_value_raw = await computeLpValueRaw(
-    client, sender, predict_id, predict_package,
-    dusdc_type, plp_type, lp_balance_raw,
-  );
+  // LP value: the portfolio's proportional share of the Predict vault.
+  //
+  //   lp_value = portfolio_plp_balance × vault_value / plp_total_supply
+  //
+  // A portfolio holding 1% of all PLP owns 1% of vault_value.
+  // Using available_withdrawal (the whole vault) as a proxy overestimates by ~100×
+  // for a small holder — a critical attack surface for NAV-based withdraw accounting.
+  const lp_value_raw = lp_balance_raw === 0n || plp_total_supply_raw === 0n
+    ? 0n
+    : (lp_balance_raw * vault_value_raw) / plp_total_supply_raw;
 
   // Sum bettor MTM.
   let bettor_mtm_raw = 0n;
@@ -224,6 +265,8 @@ export async function computeNav(
     locked_principal_raw,
     yield_accumulated_raw,
     available_balance_raw,
+    vault_value_raw,
+    plp_total_supply_raw,
   };
 }
 
@@ -239,10 +282,16 @@ function formatDusdc(raw: bigint): string {
 
 export function formatNavComponents(c: NavComponents): string {
   const nav_human = Number(c.nav_per_share) / 1e9;
+  const lp_fraction = c.plp_total_supply_raw > 0n
+    ? `${(Number(c.lp_balance_raw) / Number(c.plp_total_supply_raw) * 100).toFixed(6)}% of vault`
+    : 'n/a (no PLP supply)';
   return [
     `quote_balance    : ${formatDusdc(c.quote_balance_raw)}`,
     `lp_balance       : ${c.lp_balance_raw} PLP`,
-    `lp_value         : ${formatDusdc(c.lp_value_raw)}`,
+    `vault_value      : ${formatDusdc(c.vault_value_raw)}  (predict::balance — total DUSDC in vault)`,
+    `plp_total_supply : ${c.plp_total_supply_raw} PLP`,
+    `portfolio_share  : ${lp_fraction}`,
+    `lp_value         : ${formatDusdc(c.lp_value_raw)}  (= ${c.lp_balance_raw} × ${c.vault_value_raw} / ${c.plp_total_supply_raw})`,
     `bettor_mtm       : ${formatDusdc(c.bettor_mtm_raw)}`,
     `total_nav        : ${formatDusdc(c.total_nav_raw)}`,
     `total_shares     : ${c.total_shares}`,

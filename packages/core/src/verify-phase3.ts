@@ -14,11 +14,12 @@
  * No testnet transactions are submitted.
  */
 
+import type { CoreClient } from '@mysten/sui/client';
 import { env } from './env.js';
 import { suiClient } from './sui-client.js';
 import { computeHouseNetDeltaSynthetic, atmVol } from './math/delta.js';
 import { computeHedgeOrder } from './math/hedge.js';
-import { computeNav, formatNavComponents } from './math/nav.js';
+import { computeNav, formatNavComponents, fetchPredictVaultState } from './math/nav.js';
 import {
   sizePlpSupplier, sizeHedgedPlp, sizeSmartVault,
   sizePrincipalProtected, sizeRangeRoll, sizeVolTargetedRange, sizeVolArb,
@@ -37,29 +38,58 @@ function hr(label: string) {
   console.log('─'.repeat(60));
 }
 
+/**
+ * Fetch the latest active oracle's SVI params from the predict-server + on-chain.
+ *
+ * The predict-server /oracles endpoint gives the oracle_id. SVI params live on-chain
+ * in the oracle object (svi: {a,b,m,rho,sigma}, prices: {forward,spot}), with all values
+ * scaled by 1e9 (SVI_SCALE). The /oracles/{id}/svi REST path is also available as an
+ * alternative but requires an extra round-trip.
+ */
+const SVI_SCALE = 1e9;
+
 async function fetchLatestOracleSvi(
   predictServerUrl: string,
-): Promise<{ svi: SviParams; forward: number; t_years: number } | null> {
+  coreClient: CoreClient,
+): Promise<{ svi: SviParams; forward: number; t_years: number; oracle_id: string } | null> {
   try {
-    const res = await fetch(`${predictServerUrl}/oracles?limit=1&status=active`);
+    // Step 1: get oracle ID from predict-server
+    const res = await fetch(`${predictServerUrl}/oracles?limit=5&status=active`);
     if (!res.ok) return null;
     const data: unknown = await res.json();
     if (!Array.isArray(data) || data.length === 0) return null;
-    const oracle: unknown = data[0];
-    if (!oracle || typeof oracle !== 'object') return null;
-    const o = oracle as Record<string, unknown>;
-    if (!o['svi_params'] || !o['forward'] || !o['expiry']) return null;
-    const svi_raw = o['svi_params'] as Record<string, unknown>;
-    const svi: SviParams = {
-      a: Number(svi_raw['a']),
-      b: Number(svi_raw['b']),
-      rho: Number(svi_raw['rho']),
-      m: Number(svi_raw['m']),
-      sigma: Number(svi_raw['sigma']),
-    };
-    const expiry_ms = Number(o['expiry']);
-    const t_years = Math.max(0, (expiry_ms - Date.now()) / (1000 * 365.25 * 24 * 3600));
-    return { svi, forward: Number(o['forward']), t_years };
+
+    // Step 2: find an oracle that is still in the future and active
+    for (const o of data as Record<string, unknown>[]) {
+      const oracle_id = o['oracle_id'] as string;
+      const expiry_ms = Number(o['expiry']);
+      if (Date.now() >= expiry_ms) continue;
+
+      // Step 3: read SVI from on-chain oracle object
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await (coreClient as any).getObject({ objectId: oracle_id, include: { json: true } });
+      const json = result?.object?.json ?? result?.json;
+      if (!json?.svi || !json?.prices) continue;
+
+      const s = json.svi as Record<string, unknown>;
+      const p = json.prices as Record<string, unknown>;
+
+      // SVI params stored as scaled integers (÷ SVI_SCALE = 1e9)
+      const svi: SviParams = {
+        a: Number(s['a']) / SVI_SCALE,
+        b: Number(s['b']) / SVI_SCALE,
+        rho: ((s['rho'] as Record<string, unknown>)?.['is_negative'] ? -1 : 1)
+          * (Number((s['rho'] as Record<string, unknown>)?.['magnitude']) / SVI_SCALE),
+        m: ((s['m'] as Record<string, unknown>)?.['is_negative'] ? -1 : 1)
+          * (Number((s['m'] as Record<string, unknown>)?.['magnitude']) / SVI_SCALE),
+        sigma: Number(s['sigma']) / SVI_SCALE,
+      };
+      // Forward price also scaled by 1e9
+      const forward = Number(p['forward']) / SVI_SCALE;
+      const t_years = Math.max(0, (expiry_ms - Date.now()) / (1000 * 365.25 * 24 * 3600));
+      return { svi, forward, t_years, oracle_id };
+    }
+    return null;
   } catch {
     return null;
   }
@@ -76,7 +106,7 @@ async function main() {
   // ── Section 1: Oracle SVI ──────────────────────────────────────────────
 
   hr('1. Live Oracle SVI');
-  const oracle = await fetchLatestOracleSvi(env.PREDICT_SERVER_URL);
+  const oracle = await fetchLatestOracleSvi(env.PREDICT_SERVER_URL, suiClient.core);
   let svi: SviParams;
   let forward: number;
   let t_years: number;
@@ -113,15 +143,43 @@ async function main() {
 
   // ── Section 3: NAV computation ─────────────────────────────────────────
 
-  hr('3. NAV computation');
-  // Owner-based object queries need the GraphQL client (Phase 4 keeper uses its own portfolio ID
-  // registry). For this verification script we show the NAV formula with a known portfolio ID
-  // from the Phase 2 integration test, or a synthetic example if not provided.
+  hr('3. NAV — LP value formula (live chain reads)');
+
+  // Step 3a: Always read vault_value and plp_total_supply from chain (no portfolio needed).
+  // These are the two inputs for the correct LP value formula:
+  //   lp_value = portfolio_plp_balance × vault_value / plp_total_supply
+  const DEVNULL_SENDER = '0x0000000000000000000000000000000000000000000000000000000000000000';
+  let vault_value_raw = 0n;
+  let plp_total_supply_raw = 0n;
+  let vaultStateOk = false;
+
+  console.log(`Reading from chain...`);
+  console.log(`  predict_id    : ${env.PREDICT_OBJECT}`);
+  console.log(`  graphql_url   : ${env.SUI_GRAPHQL_URL}`);
+  try {
+    const state = await fetchPredictVaultState(
+      suiClient.core,
+      env.PREDICT_OBJECT,
+    );
+    vault_value_raw = state.vault_value_raw;
+    plp_total_supply_raw = state.plp_total_supply_raw;
+    vaultStateOk = true;
+    console.log(`  vault_value   : ${vault_value_raw} raw = ${(Number(vault_value_raw) / 1e6).toFixed(6)} DUSDC  (Predict.vault.balance via getObject)`);
+    console.log(`  plp_supply    : ${plp_total_supply_raw} raw PLP  (Predict.treasury_cap.total_supply via getObject)`);
+    if (plp_total_supply_raw > 0n) {
+      const plp_price_dusdc = Number(vault_value_raw) / Number(plp_total_supply_raw);
+      console.log(`  1 PLP = ${plp_price_dusdc.toFixed(9)} DUSDC  (vault_value / plp_supply)`);
+    }
+  } catch (e) {
+    console.log(`  [WARN] fetchPredictVaultState failed: ${e}`);
+    console.log(`  vault_value and plp_supply unavailable — LP value formula cannot be computed.`);
+  }
+
+  // Step 3b: If a portfolio ID is given, compute full NAV with the proportional LP value.
   const PORTFOLIO_ID = process.env['PORTFOLIO_ID'];
-  if (env.SONARK_PACKAGE && PORTFOLIO_ID) {
+  if (vaultStateOk && env.SONARK_PACKAGE && PORTFOLIO_ID) {
     const PLP_TYPE = `${env.PREDICT_PACKAGE}::plp::PLP`;
-    const SENDER = '0x0000000000000000000000000000000000000000000000000000000000000000';
-    console.log(`Portfolio ID : ${PORTFOLIO_ID}`);
+    console.log(`\nPortfolio NAV (PORTFOLIO_ID = ${PORTFOLIO_ID}):`);
     try {
       const nav = await computeNav(suiClient.core, {
         portfolio_id: PORTFOLIO_ID,
@@ -130,23 +188,32 @@ async function main() {
         predict_package: env.PREDICT_PACKAGE,
         dusdc_type: env.DUSDC_TYPE,
         plp_type: PLP_TYPE,
-        sender: SENDER,
+        sender: DEVNULL_SENDER,
         open_bettor_positions: [],
         locked_principal_raw: 0n,
         yield_accumulated_raw: 0n,
+        vault_value_raw,
+        plp_total_supply_raw,
       });
       console.log(formatNavComponents(nav));
     } catch (e) {
-      console.log(`NAV read failed: ${e}`);
+      console.log(`  NAV read failed: ${e}`);
     }
+  } else if (vaultStateOk) {
+    // Show the formula working correctly even without a portfolio.
+    // A portfolio with 0 PLP has lp_value = 0 by the formula — this is the correct result.
+    const synthetic_plp = 1_000_000n; // 1 PLP (hypothetical)
+    const hypothetical_lp_value = plp_total_supply_raw > 0n
+      ? (synthetic_plp * vault_value_raw) / plp_total_supply_raw
+      : 0n;
+    console.log(`\n  Formula verification (no PORTFOLIO_ID set):`);
+    console.log(`  If portfolio held ${synthetic_plp} raw PLP (1 PLP):`);
+    console.log(`    lp_value = ${synthetic_plp} × ${vault_value_raw} / ${plp_total_supply_raw}`);
+    console.log(`           = ${hypothetical_lp_value} raw = ${(Number(hypothetical_lp_value) / 1e6).toFixed(6)} DUSDC`);
+    console.log(`  Set PORTFOLIO_ID env var to compute full NAV for a real portfolio.`);
+    console.log(`  (Phase 2 integration test proved live NAV: 999,999,000 nav_per_share on testnet.)`);
   } else {
-    console.log('SONARK_PACKAGE or PORTFOLIO_ID not set — showing synthetic NAV example.');
-    console.log('(Phase 2 integration test proved live NAV: 999,999,000 nav_per_share on testnet.)');
-    console.log('Synthetic (100k vault, 50k DUSDC held, 100k shares):');
-    const quote = DUSDC(50_000);
-    const shares = 100_000n * 1_000_000n;
-    const nav_per_share = (quote * 1_000_000_000n) / shares;
-    console.log(`  nav_per_share : ${nav_per_share} (${(Number(nav_per_share) / 1e9).toFixed(9)} DUSDC/share)`);
+    console.log(`  Vault state unavailable — NAV formula cannot be demonstrated with live data.`);
   }
 
   // ── Section 4: Delta and hedge ─────────────────────────────────────────
