@@ -38,7 +38,8 @@ import {
 } from '@sonarkk/core';
 import type { StrategyId } from '@sonarkk/core';
 
-import { fetchRecentlySettledOracles, fetchOracleState } from './chain/oracle.js';
+import { fetchRecentlySettledOracles, fetchOracleState, fetchBestActiveOracleState } from './chain/oracle.js';
+import type { OracleState } from './chain/oracle.js';
 import { readPortfolioChainState, readManagerId } from './chain/portfolio.js';
 import { checkPolicyCap } from './chain/policy.js';
 import { settleBinaryPositions } from './chain/settle.js';
@@ -93,6 +94,21 @@ export async function runOracleCycle(input: OracleCycleInput): Promise<void> {
     return;
   }
 
+  // Fetch the current active oracle for entry guard + hedge calculations.
+  // The settled oracle has t_years=0 (expired) which causes atmVol=0; we need
+  // a live active oracle with a positive t_years for correct vol/guard/hedge math.
+  // fetchBestActiveOracleState reads only ONE oracle object (not all 20-30) for speed.
+  let activeOracleState: OracleState | null = null;
+  try {
+    activeOracleState = await fetchBestActiveOracleState(client);
+    log.info(
+      { active_oracle: activeOracleState?.oracle_id?.slice(0, 10), t_years: activeOracleState?.t_years },
+      'active oracle for entry guard',
+    );
+  } catch (err) {
+    log.warn({ err }, 'fetchBestActiveOracleState failed — will skip entry for this cycle');
+  }
+
   // Read Predict vault state once per cycle (shared: vault_value + plp_supply).
   let vaultState;
   try {
@@ -112,6 +128,7 @@ export async function runOracleCycle(input: OracleCycleInput): Promise<void> {
       oracle_id,
       expiry_ms,
       oracleState,
+      activeOracleState,
       vaultState,
       client,
       keypair,
@@ -142,7 +159,15 @@ interface PortfolioInput {
   };
   oracle_id: string;
   expiry_ms: number;
+  /** Settled oracle (trigger) — used for settling old positions and DB recording. */
   oracleState: Awaited<ReturnType<typeof fetchOracleState>>;
+  /**
+   * Current active oracle — used for the entry guard and hedge calculations.
+   * Distinct from oracleState because settled oracles have t_years=0 (expired)
+   * which causes atmVol to return 0 and the entry guard to always skip.
+   * null when no active oracle is available (supply step is skipped).
+   */
+  activeOracleState: OracleState | null;
   vaultState: { vault_value_raw: bigint; plp_total_supply_raw: bigint };
   client: SuiGrpcClient;
   keypair: Ed25519Keypair;
@@ -150,7 +175,7 @@ interface PortfolioInput {
 }
 
 async function processPortfolio(input: PortfolioInput): Promise<void> {
-  const { portfolio, oracle_id, expiry_ms, oracleState, vaultState, client, keypair, keeperAddress } = input;
+  const { portfolio, oracle_id, expiry_ms, oracleState, activeOracleState, vaultState, client, keypair, keeperAddress } = input;
   const { objectId: portfolioId, policyCapId } = portfolio;
   const prisma = getPrismaClient();
   const expiryBigInt = BigInt(expiry_ms);
@@ -233,15 +258,25 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
     return;
   }
 
+  // If no active oracle is available, we can settle but cannot enter a new position.
+  if (!activeOracleState) {
+    log.info({ portfolioId }, 'no active oracle available — settle only, skip entry');
+    await recordCycle(portfolio.id, oracle_id, expiryBigInt, 'skipped', 'no_active_oracle', {
+      settleTxDigest,
+    });
+    return;
+  }
+
   // Compute pool utilization from vault state (total_mtm / vault_value).
   const utilization = vaultState.vault_value_raw > 0n
     ? Number(vaultState.vault_value_raw - vaultState.plp_total_supply_raw) / Number(vaultState.vault_value_raw)
     : 0;
   const clampedUtil = Math.max(0, Math.min(1, utilization));
 
+  // Use the ACTIVE oracle SVI (not the settled one) — settled oracle has t_years=0 which makes atmVol=0.
   const guardResult = shouldSkipExpiry(
-    oracleState.svi,
-    oracleState.t_years,
+    activeOracleState.svi,
+    activeOracleState.t_years,
     clampedUtil,
     strategyId,
   );
@@ -409,9 +444,10 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
       // book is call-skewed (common at normal BTC vol) but SIZE is disconnected from
       // actual exposure — may over/under-hedge if real book composition differs.
       // Phase 5 replaces this with real BinaryPosition[] reads from PredictManager.
+      // Use activeOracleState for live SVI/spot — settled oracle's spot/svi are stale.
       const houseNetDelta = computeHouseNetDelta(
-        oracleState.svi,
-        oracleState.spot,
+        activeOracleState.svi,
+        activeOracleState.spot,
         [{
           k: 0, // ATM
           call_notional: Number(navComponents.lp_value_raw) / 1e6 * 0.55,
@@ -421,12 +457,12 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
 
       const hedgeOrder = computeHedgeOrder({
         house_net_delta: houseNetDelta,
-        spot_price_usd: oracleState.spot,
-        t_years: oracleState.t_years,
+        spot_price_usd: activeOracleState.spot,
+        t_years: activeOracleState.t_years,
         budget_remaining_dusdc: Number(hedge_budget_raw) / 1e6,
       });
 
-      idealHedgeNotional = Math.abs(houseNetDelta) * oracleState.spot;
+      idealHedgeNotional = Math.abs(houseNetDelta) * activeOracleState.spot;
 
       log.info({
         portfolioId,
@@ -620,8 +656,13 @@ export async function runPollingLoop(
 
     try {
       const settled = await fetchRecentlySettledOracles(10);
+      // Only process oracles that settled within the last 2 hours.
+      // Beyond that, any open positions would already be settled by other parties,
+      // and iterating the full history on restart wastes cycles without value.
+      const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+      const recentSettled = settled.filter(o => Date.now() - o.expiry < TWO_HOURS_MS);
 
-      for (const oracle of settled) {
+      for (const oracle of recentSettled) {
         const key = `${oracle.oracle_id}:${oracle.expiry}`;
         if (_dispatchedOracles.has(key)) continue; // already processed this session
 

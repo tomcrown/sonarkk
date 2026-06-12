@@ -34,8 +34,22 @@ const POOL_KEY = 'DBTC_DBUSDC';
 const DBTC_SCALAR  = testnetCoins['DBTC']!.scalar;   // 1e8
 const DBUSDC_SCALAR = testnetCoins['DBUSDC']!.scalar; // 1e6
 
-// Minimum DBTC order size (1 satoshi = 1e-8 BTC) to avoid dust orders.
-const MIN_DBTC_ORDER = 1 / DBTC_SCALAR; // 0.00000001 DBTC
+// DBTC_DBUSDC pool constraints confirmed 2026-06-12 from deepbook-indexer.testnet.mystenlabs.com.
+// min_size = 1000 raw (8 decimals) = 0.00001 DBTC
+// lot_size = 1000 raw — quantity MUST be a multiple of lot_size or the pool aborts (code 2).
+const DBTC_MIN_SIZE_RAW = 1000n; // raw units
+const DBTC_LOT_SIZE_RAW = 1000n; // raw units — order must be a multiple
+const MIN_DBTC_ORDER = Number(DBTC_MIN_SIZE_RAW) / DBTC_SCALAR; // 0.00001 DBTC
+
+/**
+ * Round a DBTC amount (human units) down to the nearest lot boundary.
+ * DeepBook requires quantity % lot_size === 0 (abort code 2 otherwise).
+ */
+function floorToLot(size_dbtc: number): number {
+  const raw = BigInt(Math.floor(size_dbtc * DBTC_SCALAR));
+  const rounded = (raw / DBTC_LOT_SIZE_RAW) * DBTC_LOT_SIZE_RAW;
+  return Number(rounded) / DBTC_SCALAR;
+}
 
 export interface HedgeExecutionResult {
   tx_digest: string;
@@ -63,8 +77,16 @@ export async function executeSpotHedge(
   if (order.skipped || order.direction === 'none') {
     throw new Error('executeSpotHedge called with a skipped/no-hedge order');
   }
-  if (order.size_dbtc < MIN_DBTC_ORDER) {
-    throw new Error(`order too small: ${order.size_dbtc} DBTC (min ${MIN_DBTC_ORDER})`);
+
+  // Round down to lot boundary (DeepBook requires quantity % lot_size === 0).
+  const size_dbtc_lotted = floorToLot(order.size_dbtc);
+  const notional_lotted = size_dbtc_lotted * (order.notional_dusdc / order.size_dbtc); // scale proportionally
+
+  if (size_dbtc_lotted < MIN_DBTC_ORDER) {
+    throw new Error(
+      `order too small after lot rounding: ${size_dbtc_lotted} DBTC (min ${MIN_DBTC_ORDER}). ` +
+      `Original: ${order.size_dbtc} DBTC`,
+    );
   }
 
   const managerAddress = env.DEEPBOOK_BALANCE_MANAGER;
@@ -87,19 +109,15 @@ export async function executeSpotHedge(
     pools: testnetPools,
   });
 
-  // DBTC quantity in base units (8 decimals).
-  const dbtc_quantity_raw = Math.floor(order.size_dbtc * DBTC_SCALAR);
-  // DBUSDC to deposit = hedge notional (DUSDC ≈ DBUSDC on testnet, both ~$1 stablecoins).
-  const dbusdc_deposit_raw = Math.floor(order.notional_dusdc * DBUSDC_SCALAR);
-
   const isBid = order.direction === 'long'; // bid = buy DBTC with DBUSDC
   const clientOrderId = String(Date.now()); // unique per order
 
   log.info(
     {
       direction: order.direction,
-      size_dbtc: order.size_dbtc,
-      notional_dusdc: order.notional_dusdc,
+      size_dbtc_raw: order.size_dbtc,
+      size_dbtc_lotted,
+      notional_dusdc_lotted: notional_lotted,
       ideal_notional_dusdc,
       is_partial: order.is_partial,
       shortfall_dusdc: order.shortfall_dusdc,
@@ -108,24 +126,30 @@ export async function executeSpotHedge(
   );
 
   const tx = new Transaction();
+  // Set gas budget before DeepBook calls — SDK uses setGasBudgetIfNotSet(250M MIST = 0.25 SUI),
+  // which exceeds testnet keeper wallet balance. 30M MIST (0.03 SUI) is ample for a market order.
+  tx.setGasBudget(30_000_000);
 
   // 1. Deposit the required quote (DBUSDC) or base (DBTC) into the BalanceManager.
-  //    The coinWithBalance utility finds the right coins in the sender's wallet.
+  //    depositIntoManager calls convertQuantity(amount, scalar) internally —
+  //    pass human-unit amounts, NOT pre-scaled raw values.
+  //    Deposit the full (pre-rounding) notional; unspent is withdrawn back after.
   if (isBid) {
     // Long hedge: buy DBTC → deposit DBUSDC into manager.
-    dbClient.balanceManager.depositIntoManager('KEEPER', 'DBUSDC', dbusdc_deposit_raw)(tx);
+    dbClient.balanceManager.depositIntoManager('KEEPER', 'DBUSDC', order.notional_dusdc)(tx);
   } else {
     // Short hedge: sell DBTC → deposit DBTC into manager.
-    const dbtc_deposit_raw = Math.floor(order.size_dbtc * DBTC_SCALAR);
-    dbClient.balanceManager.depositIntoManager('KEEPER', 'DBTC', dbtc_deposit_raw)(tx);
+    dbClient.balanceManager.depositIntoManager('KEEPER', 'DBTC', size_dbtc_lotted)(tx);
   }
 
   // 2. Place market order.
+  //    placeMarketOrder calls convertQuantity(quantity, baseCoin.scalar) internally.
+  //    quantity must be a multiple of the pool's lot_size (1000 raw) — use size_dbtc_lotted.
   dbClient.deepBook.placeMarketOrder({
     poolKey: POOL_KEY,
     balanceManagerKey: 'KEEPER',
     clientOrderId,
-    quantity: dbtc_quantity_raw,
+    quantity: size_dbtc_lotted,
     isBid,
     payWithDeep: false, // fees come from the traded asset
   })(tx);
@@ -154,15 +178,15 @@ export async function executeSpotHedge(
   }
 
   const digest = result.Transaction?.digest ?? '';
-  const coverage_ratio_pct = computeCoverageRatio(ideal_notional_dusdc, order.notional_dusdc);
+  const coverage_ratio_pct = computeCoverageRatio(ideal_notional_dusdc, notional_lotted);
 
   log.info(
     {
       notify: true,
       digest,
       direction: order.direction,
-      size_dbtc: order.size_dbtc,
-      notional_dusdc: order.notional_dusdc,
+      size_dbtc: size_dbtc_lotted,
+      notional_dusdc: notional_lotted,
       ideal_notional_dusdc,
       coverage_ratio_pct,
       is_partial: order.is_partial,
@@ -174,8 +198,8 @@ export async function executeSpotHedge(
   return {
     tx_digest: digest,
     order_direction: order.direction,
-    order_size_dbtc: order.size_dbtc,
-    notional_dbusdc: order.notional_dusdc,
+    order_size_dbtc: size_dbtc_lotted,
+    notional_dbusdc: notional_lotted,
     ideal_notional_dusdc,
     coverage_ratio_pct,
     is_partial: order.is_partial,

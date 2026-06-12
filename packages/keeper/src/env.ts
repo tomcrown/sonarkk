@@ -4,7 +4,8 @@ import { fileURLToPath } from 'url';
 import { z } from 'zod';
 
 const _dir = dirname(fileURLToPath(import.meta.url));
-config({ path: resolve(_dir, '../../../../.env') });
+// 3 levels up: src/ → keeper/ → packages/ → sonarkk/.env
+config({ path: resolve(_dir, '../../../.env') });
 
 const keeperEnvSchema = z.object({
   SUI_NETWORK: z.enum(['testnet', 'mainnet', 'devnet', 'localnet']).default('testnet'),

@@ -100,25 +100,44 @@ async function readOracleObject(
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
-/** Fetch all active oracles and their on-chain SVI state. */
-export async function fetchActiveOracleStates(
+/**
+ * Fetch the single best active oracle for entry guard / hedge calculations.
+ *
+ * "Best" = soonest future expiry within a reasonable window (< 4 hours).
+ * Reads only ONE on-chain oracle object (vs 20-30 in fetchActiveOracleStates),
+ * keeping the keeper cycle fast. Returns null when no suitable oracle exists.
+ */
+export async function fetchBestActiveOracleState(
   client: SuiGrpcClient,
-): Promise<OracleState[]> {
+): Promise<OracleState | null> {
   const metas = await withRetry(() => fetchOracles('active', 30), 'fetchActiveOracles');
-  const results: OracleState[] = [];
+  const nowMs = Date.now();
+  const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 
-  for (const meta of metas) {
+  // Only consider oracles that are truly in the future and within 4 hours.
+  const candidates = metas
+    .filter(m => m.expiry > nowMs && m.expiry - nowMs < FOUR_HOURS_MS)
+    .sort((a, b) => a.expiry - b.expiry); // soonest first
+
+  if (candidates.length === 0) {
+    log.warn({ total_active: metas.length }, 'no suitable active oracle found within 4h window');
+    return null;
+  }
+
+  // Try oracles in order until one reads successfully.
+  for (const meta of candidates) {
     try {
       const state = await withRetry(
-        () => readOracleObject(client, meta.oracle_id, meta.expiry, null), // expiry is already ms
+        () => readOracleObject(client, meta.oracle_id, meta.expiry, null),
         `readOracleObject(${meta.oracle_id.slice(0, 8)}...)`,
       );
-      results.push(state);
+      if (state.t_years > 0) return state;
     } catch (err) {
-      log.warn({ oracleId: meta.oracle_id, err }, 'oracle object read failed, skipping');
+      log.warn({ oracleId: meta.oracle_id, err }, 'active oracle read failed, trying next');
     }
   }
-  return results;
+
+  return null;
 }
 
 /** Fetch recently settled oracles (for triggering the settle-and-reenter cycle). */
