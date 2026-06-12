@@ -41,12 +41,14 @@ import type { StrategyId } from '@sonarkk/core';
 import { fetchRecentlySettledOracles, fetchOracleState, fetchBestActiveOracleState } from './chain/oracle.js';
 import type { OracleState } from './chain/oracle.js';
 import { readPortfolioChainState, readManagerId } from './chain/portfolio.js';
+import { readPredictManagerPositions } from './chain/predict-manager.js';
 import { checkPolicyCap } from './chain/policy.js';
 import { settleBinaryPositions } from './chain/settle.js';
 import { executeSupplyCycle, pushNavOnly } from './chain/execute.js';
 import { executeSpotHedge } from './spot/hedge.js';
 import { computeHedgeBudget } from './math/hedge-budget.js';
 import { computeBettorMtm } from './math/bettor-mtm.js';
+import { computeVolArbSignal } from './math/vol-arb-feed.js';
 import { notifyOnAction } from './notify.js';
 import { log } from './logger.js';
 import { env, EXPLORER_URL } from './env.js';
@@ -377,6 +379,7 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
   let coverageRatioPct: number | null = null;
   let isPartialHedge = false;
   let hedgeBudgetDusdc: number | null = null;
+  let deltaSource: string | null = null;
 
   try {
     let sizingResult;
@@ -439,20 +442,24 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
       );
       hedgeBudgetDusdc = Number(hedge_budget_raw) / 1e6;
 
-      // PROXY: hedge size is proportional to LP value (55% call / 45% put assumption),
-      // NOT actual open positions from PredictManager. Direction is correct when the
-      // book is call-skewed (common at normal BTC vol) but SIZE is disconnected from
-      // actual exposure — may over/under-hedge if real book composition differs.
-      // Phase 5 replaces this with real BinaryPosition[] reads from PredictManager.
-      // Use activeOracleState for live SVI/spot — settled oracle's spot/svi are stale.
+      // Read real binary positions from PredictManager (Task 1 — Phase 5 reviewer condition).
+      // For house strategies (supply-only), managerId is null → positions = [] → delta = 0.
+      // For bettor strategies with open positions, reads actual k/call/put notionals.
+      // deltaSource = 'positions' in both cases (real read path, not proxy).
+      const managerPositions = await readPredictManagerPositions(client, managerId, oracle_id);
+      deltaSource = 'positions';
+
+      log.info({
+        portfolioId,
+        managerId,
+        positionCount: managerPositions.length,
+        deltaSource,
+      }, 'PredictManager positions read');
+
       const houseNetDelta = computeHouseNetDelta(
         activeOracleState.svi,
         activeOracleState.spot,
-        [{
-          k: 0, // ATM
-          call_notional: Number(navComponents.lp_value_raw) / 1e6 * 0.55,
-          put_notional:  Number(navComponents.lp_value_raw) / 1e6 * 0.45,
-        }],
+        managerPositions,
       );
 
       const hedgeOrder = computeHedgeOrder({
@@ -524,8 +531,43 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
       lpBalanceRaw: navComponents.lp_balance_raw,
       bettorMtmRaw: bettorMtm,
       totalNavRaw: navComponents.total_nav_raw,
+      deltaSource,
     });
     return;
+  }
+
+  // ── (h) VOL-ARB SIGNAL EVALUATION ────────────────────────────────────────
+  // Evaluated for all strategies so the DB has vol-arb edge data.
+  // Only CROSS_VENUE_ARB uses it for sizing; others record it as a passive observation.
+  let volArbSource: string | null = null;
+  let volArbPredictImpliedVol: number | null = null;
+  let volArbReferenceImpliedVol: number | null = null;
+  let volArbEdgePct: number | null = null;
+  let volArbFired = false;
+
+  try {
+    const signal = await computeVolArbSignal(
+      activeOracleState.svi,
+      activeOracleState.t_years,
+      env.PREDICT_SERVER_URL,
+    );
+    volArbSource = signal.source;
+    volArbPredictImpliedVol = signal.predict_implied_vol;
+    volArbReferenceImpliedVol = signal.reference_vol;
+    volArbEdgePct = signal.edge_pct;
+    volArbFired = signal.fired && portfolio.strategy === 'CROSS_VENUE_ARB';
+
+    log.info({
+      portfolioId,
+      volArbSource,
+      predict_implied_vol: volArbPredictImpliedVol.toFixed(4),
+      reference_vol: volArbReferenceImpliedVol.toFixed(4),
+      edge_pct: volArbEdgePct.toFixed(2),
+      fired: signal.fired,
+      strategy_fires: volArbFired,
+    }, 'vol-arb signal evaluated');
+  } catch (err) {
+    log.warn({ portfolioId, err }, 'vol-arb signal evaluation failed — skipping');
   }
 
   // ── (g) RECORD CYCLE RESULT ───────────────────────────────────────────────
@@ -552,6 +594,12 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
     hedgeTxDigest,
     isPartialHedge,
     hedgeBudgetDusdc,
+    deltaSource,
+    volArbSource,
+    volArbPredictImpliedVol,
+    volArbReferenceImpliedVol,
+    volArbEdgePct,
+    volArbFired,
   });
 
   log.info({
@@ -560,6 +608,8 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
     supplyTxDigest,
     hedgeTxDigest,
     coverageRatioPct,
+    deltaSource,
+    volArbFired,
     explorer_supply: supplyTxDigest ? `${EXPLORER_URL}/${supplyTxDigest}` : null,
     explorer_hedge:  hedgeTxDigest  ? `${EXPLORER_URL}/${hedgeTxDigest}`  : null,
   }, 'portfolio cycle complete');
@@ -590,6 +640,12 @@ interface CycleExtras {
   hedgeTxDigest?: string | null;
   isPartialHedge?: boolean;
   hedgeBudgetDusdc?: number | null;
+  deltaSource?: string | null;
+  volArbSource?: string | null;
+  volArbPredictImpliedVol?: number | null;
+  volArbReferenceImpliedVol?: number | null;
+  volArbEdgePct?: number | null;
+  volArbFired?: boolean;
 }
 
 async function recordCycle(
@@ -631,6 +687,12 @@ async function recordCycle(
       hedgeTxDigest:     extras.hedgeTxDigest   ?? null,
       isPartialHedge:    extras.isPartialHedge  ?? false,
       hedgeBudgetDusdc:  extras.hedgeBudgetDusdc ?? null,
+      deltaSource:       extras.deltaSource      ?? null,
+      volArbSource:              extras.volArbSource              ?? null,
+      volArbPredictImpliedVol:   extras.volArbPredictImpliedVol   ?? null,
+      volArbReferenceImpliedVol: extras.volArbReferenceImpliedVol ?? null,
+      volArbEdgePct:             extras.volArbEdgePct             ?? null,
+      volArbFired:               extras.volArbFired               ?? false,
     },
   });
 }

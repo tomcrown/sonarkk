@@ -70,27 +70,46 @@ model KeeperRun {
 }
 
 // ---- Leaderboard (Phase 5) ----
+// Populated by the leaderboard job (packages/keeper/src/jobs/leaderboard.ts).
+// Ranking key: totalReturnPct descending.
+// APY caveat is mandatory on every consumer of rollingApyPct —
+// trader volume on testnet is minimal; numbers are not indicative of mainnet returns.
 model LeaderboardEntry {
-  id          String   @id @default(cuid())
-  strategyId  String   @unique
-  strategy    Strategy @relation(fields: [strategyId], references: [id])
-  rank        Int
-  tvlDusdc    BigInt
-  apyBps      Float
-  copiers     Int      @default(0)
-  updatedAt   DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  strategyId           String   @unique
+  strategy             Strategy @relation(fields: [strategyId], references: [id])
+  rank                 Int
+  tvlDusdc             BigInt   @default(0)
+  totalReturnPct       Float?
+  rollingApyPct        Float?
+  apyCaveat            String?
+  totalCycles          Int      @default(0)
+  successfulCycles     Int      @default(0)
+  skippedCycles        Int      @default(0)
+  maxDrawdownPct       Float?
+  avgCoverageRatioPct  Float?
+  volArbCycleCount     Int      @default(0)
+  volArbAvgEdgePct     Float?
+  copiers              Int      @default(0)
+  updatedAt            DateTime @updatedAt
 }
 
 // ---- Copy / provenance ----
+// Fee model: 10% platform performance fee + 5% copy fee — tracked but not enforced on testnet.
 model CopyRelation {
-  id            String   @id @default(cuid())
-  followerAddr  String
-  strategyId    String
-  copiedAt      DateTime @default(now())
-  uncopiedAt    DateTime?
+  id                    String    @id @default(cuid())
+  followerAddr          String
+  strategyId            String
+  strategySnapshot      String?   // JSON: strategy config at copy time
+  isActive              Boolean   @default(true)
+  copiedAt              DateTime  @default(now())
+  uncopiedAt            DateTime?
+  performanceFeeAccrued Float     @default(0.0) // platform 10% performance fee (DUSDC)
+  copyFeeAccrued        Float     @default(0.0) // copy 5% fee (DUSDC)
 
   @@unique([followerAddr, strategyId])
   @@index([strategyId])
+  @@index([followerAddr])
 }
 
 // ---- Phase 4: On-chain portfolio registry ----
@@ -157,6 +176,18 @@ model KeeperCycle {
   hedgeSkipReason      String?   // set when hedge was skipped (no BalanceManager, math skip, etc.)
   isPartialHedge       Boolean  @default(false)
   hedgeBudgetDusdc     Float?
+
+  // Delta source — 'positions' = real PredictManager read, 'proxy' = 55/45 LP value approximation.
+  // Phase 5 Task 1: always 'positions' once predict-manager.ts is wired in.
+  deltaSource          String?
+
+  // Vol-arb cross-venue fields (Phase 5 Task 6).
+  // volArbSource: 'hyperliquid' | 'polymarket' | 'realized_vol_fallback'
+  volArbSource              String?
+  volArbPredictImpliedVol   Float?
+  volArbReferenceImpliedVol Float?
+  volArbEdgePct             Float?
+  volArbFired               Boolean  @default(false)
 
   createdAt DateTime @default(now())
 
