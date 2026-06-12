@@ -72,9 +72,9 @@ export function simulateHedgedPlp(
     // Apply delta-hedge if large enough to justify friction.
     let hedge_pnl = 0;
     if (Math.abs(net_delta_dbtc) >= MIN_HEDGE_DBTC) {
-      // Short net_delta_dbtc DBTC at S0, unwind at S_T.
-      // Hedge is a short → P&L = -net_delta × (S_T - S0)
-      hedge_pnl = -net_delta_dbtc * (S_T - S0);
+      // House with more calls than puts has net NEGATIVE delta (delta.ts convention).
+      // Correct hedge: LONG net_delta_dbtc DBTC → P&L = +net_delta × (S_T - S0)
+      hedge_pnl = +net_delta_dbtc * (S_T - S0);
       // Friction = bps × round-trip notional (entry + exit ≈ 2 × entry)
       const friction_cost =
         (config.deepbook_friction_bps / 10_000) * net_delta_dbtc * S0 * 2;

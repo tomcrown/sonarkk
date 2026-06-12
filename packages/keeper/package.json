@@ -9,19 +9,27 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
-    "test": "node --experimental-vm-modules ../../node_modules/.bin/jest",
-    "start": "node --loader ts-node/esm src/index.ts"
+    "start": "tsx src/index.ts",
+    "setup": "tsx src/setup.ts",
+    "deploy-portfolio": "tsx src/deploy-portfolio.ts",
+    "resilience-test": "tsx src/resilience-test.ts",
+    "register-portfolio": "tsx src/register-portfolio.ts",
+    "supply-once": "tsx src/run-supply-once.ts",
+    "hedged-once": "tsx src/run-hedged-once.ts",
+    "swap-dbusdc": "tsx src/swap-sui-for-dbusdc.ts"
   },
   "dependencies": {
     "@sonarkk/core": "workspace:*",
     "@mysten/sui": "^2.17.0",
     "@mysten/deepbook-v3": "^1.4.1",
+    "@prisma/client": "^5.19.0",
     "zod": "^3.23.0",
     "dotenv": "^16.4.0",
     "pino": "^9.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "ts-node": "^10.9.2"
+    "tsx": "^4.22.4",
+    "typescript": "^5.5.0"
   }
 }

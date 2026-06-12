@@ -106,7 +106,8 @@ export function simulateSmartVault(
     // Apply hedge to hedge allocation.
     let hedge_pnl = 0;
     if (Math.abs(net_delta_dbtc) >= MIN_HEDGE_DBTC) {
-      hedge_pnl = -net_delta_dbtc * (S_T - S0);
+      // House net delta < 0 (more calls than puts) → hedge LONG → P&L = +net_delta × ΔS
+      hedge_pnl = +net_delta_dbtc * (S_T - S0);
       const friction = (config.deepbook_friction_bps / 10_000) * Math.abs(net_delta_dbtc) * S0 * 2;
       hedge_pnl -= friction;
     }

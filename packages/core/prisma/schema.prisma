@@ -5,18 +5,22 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Local/CI: provider=sqlite, DATABASE_URL="file:./dev.db"
+// Production (Supabase): change provider to "postgresql" and set DATABASE_URL.
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
 // ---- Strategy registry ----
+// StrategyType values: PLP_SUPPLIER | HEDGED_PLP | SMART_VAULT |
+//   PRINCIPAL_PROTECTED | RANGE_ROLL | VOL_TARGETED_RANGE | CROSS_VENUE_ARB
+// Stored as String for SQLite compat; Postgres migration will add a CHECK constraint.
 model Strategy {
   id          String   @id @default(cuid())
   slug        String   @unique
   name        String
-  type        StrategyType
+  type        String   // StrategyType enum value
   active      Boolean  @default(false)
   vaultId     String?  @unique
   createdAt   DateTime @default(now())
@@ -25,16 +29,6 @@ model Strategy {
   backtestResults BacktestResult[]
   keeperRuns      KeeperRun[]
   leaderboard     LeaderboardEntry?
-}
-
-enum StrategyType {
-  PLP_SUPPLIER        // Strategy 1
-  HEDGED_PLP          // Strategy 2
-  SMART_VAULT         // Strategy 3
-  PRINCIPAL_PROTECTED // Strategy 4
-  RANGE_ROLL          // Strategy 5
-  VOL_TARGETED_RANGE  // Strategy 6
-  CROSS_VENUE_ARB     // Strategy 7
 }
 
 // ---- Backtest results (Phase 1 output) ----
@@ -58,31 +52,21 @@ model BacktestResult {
 }
 
 // ---- Keeper execution log (Phase 4) ----
+// KeeperAction values: SUPPLY | WITHDRAW | MINT | MINT_RANGE | REDEEM | REDEEM_RANGE | HEDGE_SPOT | SKIP
 model KeeperRun {
-  id           String       @id @default(cuid())
+  id           String   @id @default(cuid())
   strategyId   String
-  strategy     Strategy     @relation(fields: [strategyId], references: [id])
+  strategy     Strategy @relation(fields: [strategyId], references: [id])
   oracleId     String
-  action       KeeperAction
-  txDigest     String?      @unique
+  action       String   // KeeperAction enum value
+  txDigest     String?  @unique
   success      Boolean
   errorMsg     String?
   gasUsed      BigInt?
-  executedAt   DateTime     @default(now())
+  executedAt   DateTime @default(now())
 
   @@index([strategyId])
   @@index([oracleId])
-}
-
-enum KeeperAction {
-  SUPPLY
-  WITHDRAW
-  MINT
-  MINT_RANGE
-  REDEEM
-  REDEEM_RANGE
-  HEDGE_SPOT
-  SKIP
 }
 
 // ---- Leaderboard (Phase 5) ----
@@ -107,4 +91,80 @@ model CopyRelation {
 
   @@unique([followerAddr, strategyId])
   @@index([strategyId])
+}
+
+// ---- Phase 4: On-chain portfolio registry ----
+// Keeper processes every Portfolio where isActive = true each expiry cycle.
+model Portfolio {
+  id               String   @id @default(cuid())
+  objectId         String   @unique   // Sui object ID of SonarkPortfolio<DUSDC>
+  ownerAddress     String
+  policyCapId      String             // PolicyCap object ID (keeper reads to check validity)
+  strategy         String   // StrategyType enum value
+  isActive         Boolean  @default(true)
+  // For Hedged-PLP: scales the hedge notional relative to active PLP position.
+  // 1.0 = full hedge of active notional. Capped by 50% of availableBalance.
+  hedgeMultiplier  Float    @default(1.0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  cycles KeeperCycle[]
+}
+
+// ---- Phase 4: Per-expiry keeper execution log ----
+// Primary idempotency key: (portfolioId, expiryMs).
+// The unique constraint ensures that restarting the keeper mid-cycle
+// will skip already-processed portfolio+expiry combinations.
+model KeeperCycle {
+  id          String   @id @default(cuid())
+  portfolioId String
+  portfolio   Portfolio @relation(fields: [portfolioId], references: [id])
+  oracleId    String
+  expiryMs    BigInt   // oracle expiry timestamp ms — idempotency key component
+
+  // Outcome
+  status      String   // done | skipped | error
+  skipReason  String?
+  errorMsg    String?
+
+  // NAV snapshot (before cycle)
+  navPerShareBefore  BigInt?
+  navPerShareAfter   BigInt?
+  quoteBalanceRaw    BigInt?
+  lpBalanceRaw       BigInt?
+  lpValueRaw         BigInt?
+  bettorMtmRaw       BigInt?
+  totalNavRaw        BigInt?
+  vaultValueRaw      BigInt?
+  plpTotalSupplyRaw  BigInt?
+
+  // Entry guard
+  atmVol             Float?
+  atmSpread          Float?
+  entryGuardSkipped  Boolean  @default(false)
+
+  // Execution
+  settleTxDigest     String?
+  supplyTxDigest     String?
+
+  // Hedge (strategy ② Hedged-PLP)
+  hedgeDirection       String?   // long | short | none
+  hedgeSizeDbtc        Float?
+  hedgeNotionalDusdc   Float?
+  idealHedgeNotional   Float?
+  coverageRatioPct     Float?    // Phase 5 reads this to show hedge coverage to users
+  hedgeTxDigest        String?
+  hedgeSkipReason      String?   // set when hedge was skipped (no BalanceManager, math skip, etc.)
+  isPartialHedge       Boolean  @default(false)
+  hedgeBudgetDusdc     Float?
+
+  createdAt DateTime @default(now())
+
+  // Composite unique index — the idempotency constraint.
+  // If the keeper crashes after execute but before this record is written,
+  // on restart it will attempt the cycle again (no record found = not done).
+  // If the crash is after this record, the duplicate is silently skipped.
+  @@unique([portfolioId, expiryMs])
+  @@index([oracleId])
+  @@index([portfolioId])
 }
