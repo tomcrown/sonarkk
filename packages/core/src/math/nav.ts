@@ -125,13 +125,19 @@ async function readU64(
  */
 
 type PredictJson = {
-  vault?: { balance?: string };
+  vault?: {
+    balance?: string;
+    total_max_payout?: string; // sum of all outstanding binary option face values (raw DUSDC)
+    total_mtm?: string;        // current mark-to-market of all outstanding options (raw DUSDC)
+  };
   treasury_cap?: { total_supply?: { value?: string } };
 };
 
 function parsePredictJson(json: PredictJson): {
   vault_value_raw: bigint;
   plp_total_supply_raw: bigint;
+  total_max_payout_raw: bigint;
+  total_mtm_raw: bigint;
 } {
   const vault_balance = json?.vault?.balance;
   if (!vault_balance) {
@@ -152,6 +158,8 @@ function parsePredictJson(json: PredictJson): {
   return {
     vault_value_raw: BigInt(vault_balance),
     plp_total_supply_raw: BigInt(plp_supply),
+    total_max_payout_raw: BigInt(json?.vault?.total_max_payout ?? '0'),
+    total_mtm_raw: BigInt(json?.vault?.total_mtm ?? '0'),
   };
 }
 
@@ -174,7 +182,7 @@ function parsePredictJson(json: PredictJson): {
 export async function fetchPredictVaultState(
   coreClient: CoreClient,
   predictId: string,
-): Promise<{ vault_value_raw: bigint; plp_total_supply_raw: bigint }> {
+): Promise<{ vault_value_raw: bigint; plp_total_supply_raw: bigint; total_max_payout_raw: bigint; total_mtm_raw: bigint }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result = await (coreClient as any).getObject({
     objectId: predictId,

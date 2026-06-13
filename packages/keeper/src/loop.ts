@@ -30,11 +30,13 @@ import {
   computeNav,
   shouldSkipExpiry,
   computeHouseNetDelta,
+  computeHouseNetDeltaSynthetic,
   computeHedgeOrder,
   sizePlpSupplier,
   sizeHedgedPlp,
   sizeSmartVault,
   sizePrincipalProtected,
+  sviW,
 } from '@sonarkk/core';
 import type { StrategyId } from '@sonarkk/core';
 
@@ -170,7 +172,7 @@ interface PortfolioInput {
    * null when no active oracle is available (supply step is skipped).
    */
   activeOracleState: OracleState | null;
-  vaultState: { vault_value_raw: bigint; plp_total_supply_raw: bigint };
+  vaultState: { vault_value_raw: bigint; plp_total_supply_raw: bigint; total_max_payout_raw: bigint; total_mtm_raw: bigint };
   client: SuiGrpcClient;
   keypair: Ed25519Keypair;
   keeperAddress: string;
@@ -269,9 +271,11 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
     return;
   }
 
-  // Compute pool utilization from vault state (total_mtm / vault_value).
+  // True pool utilization = outstanding option liability / total vault assets.
+  // total_max_payout_raw = sum of all binary option face values currently outstanding
+  // in the Predict vault (read from vault.total_max_payout JSON field).
   const utilization = vaultState.vault_value_raw > 0n
-    ? Number(vaultState.vault_value_raw - vaultState.plp_total_supply_raw) / Number(vaultState.vault_value_raw)
+    ? Number(vaultState.total_max_payout_raw) / Number(vaultState.vault_value_raw)
     : 0;
   const clampedUtil = Math.max(0, Math.min(1, utilization));
 
@@ -456,11 +460,31 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
         deltaSource,
       }, 'PredictManager positions read');
 
-      const houseNetDelta = computeHouseNetDelta(
-        activeOracleState.svi,
-        activeOracleState.spot,
-        managerPositions,
-      );
+      // Fix 1: house strategies (supply-only) have no binary positions in PredictManager.
+      // Use computeHouseNetDeltaSynthetic to derive vault-level delta from the Predict
+      // vault's aggregate outstanding option liability (total_max_payout_raw / vault_value_raw).
+      // The portfolio's proportional delta = lp_value_dusdc × aggregate_delta_per_unit.
+      let houseNetDelta: number;
+      if (managerPositions.length > 0) {
+        houseNetDelta = computeHouseNetDelta(activeOracleState.svi, activeOracleState.spot, managerPositions);
+      } else {
+        const total_lp_dusdc = Number(navComponents.lp_value_raw) / 1e6;
+        if (vaultState.total_max_payout_raw > 0n && total_lp_dusdc > 0) {
+          // atm_vol_sqrt_t = √(SVI ATM total variance), the natural x-axis unit for strike offsets.
+          const atm_vol_sqrt_t = Math.sqrt(Math.max(sviW(activeOracleState.svi, 0), 1e-10));
+          houseNetDelta = computeHouseNetDeltaSynthetic(
+            activeOracleState.svi,
+            activeOracleState.spot,
+            atm_vol_sqrt_t,
+            [-2, -1, 0, 1, 2],          // strike offsets in ATM σ√T units
+            [0.10, 0.25, 0.30, 0.25, 0.10], // weight distribution across strikes
+            0.55,                        // 55% calls / 45% puts (empirical mix from BTC options)
+            total_lp_dusdc,
+          );
+        } else {
+          houseNetDelta = 0;
+        }
+      }
 
       const hedgeOrder = computeHedgeOrder({
         house_net_delta: houseNetDelta,
