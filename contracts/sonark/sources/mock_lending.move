@@ -121,3 +121,31 @@ public fun set_apy(lending: &mut MockLending, new_apy_bps: u64, ctx: &TxContext)
     assert!(ctx.sender() == lending.admin, ENotAdmin);
     lending.simulated_apy_bps = new_apy_bps;
 }
+
+/// Fast-forward a receipt's last_claimed_ms backward by `elapsed_ms` so the
+/// next accrue_yield call returns a predictable amount (testnet only).
+///
+/// Use case: on testnet, time-based yield accrual at 5% APY on 100 DUSDC
+/// only produces ~0.0000095 DUSDC per second — too small for realistic
+/// keeper testing. Call this once after enable_principal_protected to make
+/// the receipt appear as if `elapsed_ms` has already passed, then run the
+/// keeper cycle to observe a meaningful yield claim + bet.
+///
+/// Safe: does NOT change principal or total APY parameters. Does NOT mint
+/// any coin — only adjusts the timestamp so `accrue_yield` returns more.
+/// Admin-only to prevent abuse.
+public fun admin_fast_forward_yield(
+    lending: &MockLending,
+    receipt: &mut LendingReceipt,
+    elapsed_ms: u64,
+    ctx: &TxContext,
+) {
+    assert!(ctx.sender() == lending.admin, ENotAdmin);
+    // Move last_claimed_ms backward by elapsed_ms so next accrue_yield sees
+    // that duration as "unclaimed". Clamp to deposited_at_ms floor.
+    if (receipt.last_claimed_ms > elapsed_ms) {
+        receipt.last_claimed_ms = receipt.last_claimed_ms - elapsed_ms;
+    } else {
+        receipt.last_claimed_ms = receipt.deposited_at_ms;
+    }
+}

@@ -58,6 +58,15 @@ const keeperEnvSchema = z.object({
     .default('30000'),
 
   DATABASE_URL: z.string().optional(),
+
+  // MockLending shared object ID (deployed by setup.ts, used by strategy ④).
+  // Required for PRINCIPAL_PROTECTED portfolios.
+  MOCK_LENDING_ID: z.string().optional(),
+
+  // PREDICT_PACKAGE is already above — PREDICT_REGISTRY used for create_manager.
+  PREDICT_REGISTRY: z.string().default(
+    '0x43af14fed5480c20ff77e2263d5f794c35b9fab7e2212903127062f4fe2a6e64',
+  ),
 });
 
 export type KeeperEnv = z.infer<typeof keeperEnvSchema>;

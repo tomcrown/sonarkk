@@ -43,6 +43,7 @@ export interface OracleState {
   expiry_ms: number;
   svi: SviParams;
   forward: number;
+  forward_raw: bigint;  // raw nanoUSD on-chain value (forward * 1e9); use for PTB strike args
   spot: number;
   t_years: number;
   settlement_price: number | null;
@@ -89,13 +90,14 @@ async function readOracleObject(
     sigma: Number(s['sigma']) / SVI_SCALE,
   };
 
-  const forward = Number(p['forward']) / SVI_SCALE;
-  const spot    = Number(p['spot'])    / SVI_SCALE;
+  const forward_raw = BigInt(String(p['forward']));
+  const forward = Number(forward_raw) / SVI_SCALE;
+  const spot    = Number(p['spot'])   / SVI_SCALE;
 
   const nowMs   = Date.now();
   const t_years = Math.max(0, (expiryMs - nowMs) / (365.25 * 24 * 60 * 60 * 1000));
 
-  return { oracle_id: oracleId, expiry_ms: expiryMs, svi, forward, spot, t_years, settlement_price: settlementPrice };
+  return { oracle_id: oracleId, expiry_ms: expiryMs, svi, forward, forward_raw, spot, t_years, settlement_price: settlementPrice };
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────

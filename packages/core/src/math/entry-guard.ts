@@ -25,7 +25,11 @@ import type { SviParams } from './delta.js';
 
 // ── Thresholds ─────────────────────────────────────────────────────────────
 
-export const MIN_ATM_VOL: Record<StrategyId, number> = {
+// Production thresholds (CLAUDE.md binding implementation Rule 4).
+// Override via MIN_ATM_VOL_OVERRIDE_JSON env variable for testnet testing.
+// Example: MIN_ATM_VOL_OVERRIDE_JSON='{"range_roll":0.13,"vol_targeted_range":0.13,"vol_arb_sell":0.10}'
+// Only bettor strategies need testnet overrides — house strategies work at any vol.
+const PRODUCTION_MIN_ATM_VOL: Record<StrategyId, number> = {
   plp_supplier:        0.15,
   hedged_plp:          0.18,
   smart_vault:         0.18,
@@ -34,6 +38,21 @@ export const MIN_ATM_VOL: Record<StrategyId, number> = {
   vol_targeted_range:  0.28,
   vol_arb_sell:        0.22,
 };
+
+function buildMinAtmVol(): Record<StrategyId, number> {
+  const overrideJson = process.env['MIN_ATM_VOL_OVERRIDE_JSON'];
+  if (!overrideJson) return { ...PRODUCTION_MIN_ATM_VOL };
+  try {
+    const overrides = JSON.parse(overrideJson) as Partial<Record<StrategyId, number>>;
+    return { ...PRODUCTION_MIN_ATM_VOL, ...overrides };
+  } catch {
+    // Malformed JSON — fall back to production values. Do not silently lower thresholds.
+    console.warn('[entry-guard] MIN_ATM_VOL_OVERRIDE_JSON is not valid JSON — using production thresholds');
+    return { ...PRODUCTION_MIN_ATM_VOL };
+  }
+}
+
+export const MIN_ATM_VOL: Record<StrategyId, number> = buildMinAtmVol();
 
 const BASE_SPREAD = 0.02;
 const FLOOR_SPREAD = 0.005;

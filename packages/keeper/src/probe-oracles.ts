@@ -24,15 +24,15 @@ async function main() {
     try {
       const result = await (client.core as any).getObject({ objectId: o.oracle_id, include: { json: true } });
       const json = (result?.object?.json ?? result?.json) as Record<string, any>;
-      const s = json?.svi as Record<string, any>;
+      const s = json?.['svi'] as Record<string, any>;
       if (!s) { console.log(`  ${o.oracle_id.slice(0,12)}... no SVI field`); continue; }
       const sig = (f: any) => (f?.is_negative ? -1 : 1) * (Number(f?.magnitude) / SVI_SCALE);
       const svi = {
-        a: Number(s.a) / SVI_SCALE,
-        b: Number(s.b) / SVI_SCALE,
-        rho: sig(s.rho),
-        m: sig(s.m),
-        sigma: Number(s.sigma) / SVI_SCALE,
+        a: Number(s['a']) / SVI_SCALE,
+        b: Number(s['b']) / SVI_SCALE,
+        rho: sig(s['rho']),
+        m: sig(s['m']),
+        sigma: Number(s['sigma']) / SVI_SCALE,
       };
       const vol = atmVol(svi, t);
       const p15 = vol >= 0.15, p18 = vol >= 0.18;

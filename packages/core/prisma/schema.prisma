@@ -124,10 +124,102 @@ model Portfolio {
   // For Hedged-PLP: scales the hedge notional relative to active PLP position.
   // 1.0 = full hedge of active notional. Capped by 50% of availableBalance.
   hedgeMultiplier  Float    @default(1.0)
+  // PredictManager object ID — bettor strategies (⑤⑥⑦) only. null for house strategies.
+  managerId        String?
+  // VaultConfig this portfolio belongs to (null = standalone portfolio).
+  vaultConfigId    String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  cycles KeeperCycle[]
+  cycles        KeeperCycle[]
+  openPositions OpenPosition[]
+  vaultConfig   VaultConfig?   @relation(fields: [vaultConfigId], references: [id])
+}
+
+// ---- Phase 6: Open bettor positions ----
+// Tracks live binary/range positions for settlement in the next cycle.
+// Populated after mint/mint_range PTBs; consumed by settlement step.
+// Deleted when the position settles (payout recorded in KeeperCycle).
+model OpenPosition {
+  id            String   @id @default(cuid())
+  portfolioId   String
+  portfolio     Portfolio @relation(fields: [portfolioId], references: [id])
+  positionType  String   // 'binary' | 'range'
+  oracleId      String   // oracle the position was minted against
+  marketKey     String   // on-chain key for redeem_permissionless / redeem_range
+  quantityRaw   BigInt   // contracts held (for binary) or notional raw (for range)
+  notionalRaw   BigInt   // DUSDC paid as premium
+  expiryMs      BigInt   // oracle expiry ms — when to settle
+  mintTxDigest  String?
+  settledAt     DateTime?
+  payoutRaw     BigInt   @default(0)
+  createdAt     DateTime @default(now())
+
+  @@index([portfolioId])
+  @@index([oracleId])
+  @@index([expiryMs])
+}
+
+// ---- Phase 6: Named bot / vault config ----
+// A VaultConfig is a named collection of portfolios with defined allocations.
+// It is the unit for leaderboard display and copy-trading.
+// One VaultConfig → many Portfolios (each a different strategy).
+model VaultConfig {
+  id              String   @id @default(cuid())
+  name            String                         // user-chosen name e.g. "Alice's Bot"
+  creatorAddress  String
+  // JSON array: [{ strategy: 'HEDGED_PLP', allocationBps: 6000 }, ...]
+  // allocationBps sums to 10000 (100%). Defines the intended mix.
+  allocations     String   @default("[]")
+  isPublic        Boolean  @default(true)        // visible in leaderboard
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  portfolios      Portfolio[]
+  leaderboard     VaultLeaderboardEntry?
+  copies          VaultCopyRelation[]   @relation("originalVault")
+  copiedFrom      VaultCopyRelation[]   @relation("copiedVault")
+}
+
+// ---- Phase 6: Vault-level leaderboard ----
+// One row per VaultConfig. Combined NAV = sum of all constituent portfolios.
+// Ranking key: totalReturnPct descending.
+model VaultLeaderboardEntry {
+  id                String   @id @default(cuid())
+  vaultConfigId     String   @unique
+  vaultConfig       VaultConfig @relation(fields: [vaultConfigId], references: [id])
+  rank              Int
+  combinedTvlRaw    BigInt   @default(0)   // sum of portfolio NAVs (raw DUSDC)
+  totalReturnPct    Float?
+  rollingApyPct     Float?
+  apyCaveat         String?
+  totalCycles       Int      @default(0)
+  successfulCycles  Int      @default(0)
+  copierCount       Int      @default(0)
+  updatedAt         DateTime @updatedAt
+}
+
+// ---- Phase 6: Vault-level copy relation ----
+// Tracks who copied which VaultConfig. On copy, keeper deploys matching portfolios
+// for the follower (same strategy mix) in a single PTB.
+model VaultCopyRelation {
+  id               String    @id @default(cuid())
+  followerAddr     String
+  originalVaultId  String
+  originalVault    VaultConfig @relation("originalVault", fields: [originalVaultId], references: [id])
+  // The follower's VaultConfig created for them by the copy action.
+  copiedVaultId    String?
+  copiedVault      VaultConfig? @relation("copiedVault", fields: [copiedVaultId], references: [id])
+  // Snapshot of the creator's allocations at copy time.
+  allocationSnapshot String?
+  isActive         Boolean   @default(true)
+  copiedAt         DateTime  @default(now())
+  uncopiedAt       DateTime?
+
+  @@unique([followerAddr, originalVaultId])
+  @@index([originalVaultId])
+  @@index([followerAddr])
 }
 
 // ---- Phase 4: Per-expiry keeper execution log ----

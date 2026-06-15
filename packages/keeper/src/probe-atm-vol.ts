@@ -19,7 +19,7 @@ for (const o of ORACLES) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const json = (result?.object?.json ?? result?.json) as Record<string, any>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const s = json?.svi as Record<string, any>;
+  const s = json?.['svi'] as Record<string, any>;
   // gRPC getObject returns signed fields WITHOUT a .fields wrapper — e.g. s.rho.is_negative
   // (contrast: JSON-RPC showContent returns s.rho.fields.is_negative)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -27,11 +27,11 @@ for (const o of ORACLES) {
     (f?.is_negative ? -1 : 1) * (Number(f?.magnitude) / SVI_SCALE);
 
   const sviParams = {
-    a:     Number(s?.a) / SVI_SCALE,
-    b:     Number(s?.b) / SVI_SCALE,
-    rho:   signedField(s?.rho),
-    m:     signedField(s?.m),
-    sigma: Number(s?.sigma) / SVI_SCALE,
+    a:     Number(s?.['a']) / SVI_SCALE,
+    b:     Number(s?.['b']) / SVI_SCALE,
+    rho:   signedField(s?.['rho']),
+    m:     signedField(s?.['m']),
+    sigma: Number(s?.['sigma']) / SVI_SCALE,
   };
   const t_years = Math.max(0, (o.expiry - Date.now()) / (365.25 * 24 * 60 * 60 * 1000));
   const vol = atmVol(sviParams, t_years);

@@ -1,22 +1,28 @@
 /**
- * Settlement of prior positions via redeem_permissionless.
+ * Settlement of prior positions via redeem_permissionless / redeem_range.
  *
  * Binary positions: redeem_permissionless — no owner check required.
- * Range positions: stored in the portfolio's PredictManager; the keeper calls
- *   redeem_range which requires the manager to be registered on the portfolio.
+ * Range positions: redeem_range — same; keeper tracks open positions in DB.
  *
- * Settlement payout flows back into portfolio.quote_balance via store_quote.
- * The keeper includes settle calls at the top of the per-expiry PTB.
+ * Actual on-chain signatures (verified 2026-06-15):
+ *   redeem_permissionless<Q>(predict, manager, oracle, key: MarketKey, amount, clock, ctx) → void
+ *   redeem_range<Q>(predict, manager, oracle, key: RangeKey, amount, clock, ctx) → void
  *
- * For Phase 4, binary settlement is implemented; range settlement requires
- * the keeper to track open range positions (MarketKey + quantity). The keeper
- * stores these in the DB during the mint step and reads them here on settlement.
+ * Both return void. The payout is added to the PredictManager's internal balance.
+ * After redemption, we call predict_manager::balance → withdraw → store_quote to
+ * return all accumulated funds (payout + any leftover premium) to the portfolio.
+ *
+ * Key reconstruction from DB-stored market key strings:
+ *   "binary|{oracle_id}|{expiry_ms}|{strike_raw}|{call/put}"
+ *     → market_key::up/down(oracle_id: ID, expiry: u64, strike: u64) → MarketKey
+ *   "range|{oracle_id}|{expiry_ms}|{lower_strike_raw}|{upper_strike_raw}"
+ *     → range_key::new(oracle_id: ID, expiry: u64, lower: u64, upper: u64) → RangeKey
  */
 
 import { Transaction } from '@mysten/sui/transactions';
 import type { SuiGrpcClient } from '@mysten/sui/grpc';
 import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
-import { env, PLP_TYPE, CLOCK_ID } from '../env.js';
+import { env, CLOCK_ID } from '../env.js';
 import { log } from '../logger.js';
 import { withRetry } from '../util/retry.js';
 
@@ -31,15 +37,57 @@ export interface SettleResult {
   payout_raw: bigint;
 }
 
+// ── Key parsing ───────────────────────────────────────────────────────────────
+
+interface ParsedBinaryKey {
+  oracleId: string;
+  expiryMs: bigint;
+  strikeRaw: bigint;
+  isCall: boolean;
+}
+
+interface ParsedRangeKey {
+  oracleId: string;
+  expiryMs: bigint;
+  lowerStrikeRaw: bigint;
+  upperStrikeRaw: bigint;
+}
+
+function parseBinaryKey(key: string): ParsedBinaryKey {
+  // "binary|{oracle_id}|{expiry_ms}|{strike_raw}|{call/put}"
+  const parts = key.split('|');
+  if (parts.length !== 5 || parts[0] !== 'binary') {
+    throw new Error(`invalid binary key format: ${key}`);
+  }
+  return {
+    oracleId: parts[1]!,
+    expiryMs: BigInt(parts[2]!),
+    strikeRaw: BigInt(parts[3]!),
+    isCall: parts[4] === 'call',
+  };
+}
+
+function parseRangeKey(key: string): ParsedRangeKey {
+  // "range|{oracle_id}|{expiry_ms}|{lower_strike_raw}|{upper_strike_raw}"
+  const parts = key.split('|');
+  if (parts.length !== 5 || parts[0] !== 'range') {
+    throw new Error(`invalid range key format: ${key}`);
+  }
+  return {
+    oracleId: parts[1]!,
+    expiryMs: BigInt(parts[2]!),
+    lowerStrikeRaw: BigInt(parts[3]!),
+    upperStrikeRaw: BigInt(parts[4]!),
+  };
+}
+
+// ── Binary settlement ─────────────────────────────────────────────────────────
+
 /**
- * Settle all binary positions that matured at `oracleId`.
+ * Settle binary positions that matured at the given oracle.
  *
- * predict::redeem_permissionless settles binary positions for any caller;
- * no ownership check is needed. It reads the oracle settlement price
- * and pays out the winner's notional.
- *
- * The payout is stored back into the portfolio via store_quote.
- * Returns null if there are no positions to settle.
+ * redeem_permissionless settles for any caller; no ownership check.
+ * After all redeems, withdraws the full manager balance back into the portfolio.
  */
 export async function settleBinaryPositions(
   client: SuiGrpcClient,
@@ -57,30 +105,52 @@ export async function settleBinaryPositions(
   const tx = new Transaction();
 
   for (let i = 0; i < marketKeys.length; i++) {
-    const key = marketKeys[i]!;
-    const qty  = quantities[i]!;
+    const rawKey = marketKeys[i]!;
+    const qty    = quantities[i]!;
+    const parsed = parseBinaryKey(rawKey);
 
-    // redeem_permissionless<DUSDC>(predict, manager, oracle, key, quantity, clock) → Coin<DUSDC>
-    const payout = tx.moveCall({
+    // Build MarketKey struct: market_key::up/down(oracle_id: ID, expiry: u64, strike: u64)
+    const onchainKey = tx.moveCall({
+      target: `${PREDICT_PKG()}::market_key::${parsed.isCall ? 'up' : 'down'}`,
+      typeArguments: [],
+      arguments: [
+        tx.pure.id(parsed.oracleId),
+        tx.pure.u64(parsed.expiryMs),
+        tx.pure.u64(parsed.strikeRaw),
+      ],
+    });
+
+    // redeem_permissionless → void; payout added to manager's internal balance.
+    tx.moveCall({
       target: `${PREDICT_PKG()}::predict::redeem_permissionless`,
       typeArguments: [DUSDC],
       arguments: [
         tx.object(PREDICT_OBJ()),
         tx.object(managerId),
         tx.object(oracleId),
-        tx.pure.string(key),
+        onchainKey,
         tx.pure.u64(qty),
         tx.object(CLOCK_ID),
       ],
     });
-
-    // Store payout back into the portfolio
-    tx.moveCall({
-      target: `${SONARK_PKG()}::portfolio::store_quote`,
-      typeArguments: [DUSDC],
-      arguments: [tx.object(portfolioId), payout],
-    });
   }
+
+  // After all redeems, read manager balance and withdraw everything.
+  const bal = tx.moveCall({
+    target: `${PREDICT_PKG()}::predict_manager::balance`,
+    typeArguments: [],
+    arguments: [tx.object(managerId)],
+  });
+  const payoutCoin = tx.moveCall({
+    target: `${PREDICT_PKG()}::predict_manager::withdraw`,
+    typeArguments: [DUSDC],
+    arguments: [tx.object(managerId), bal],
+  });
+  tx.moveCall({
+    target: `${SONARK_PKG()}::portfolio::store_quote`,
+    typeArguments: [DUSDC],
+    arguments: [tx.object(portfolioId), payoutCoin],
+  });
 
   const result = await withRetry(
     () => client.core.signAndExecuteTransaction({
@@ -96,16 +166,18 @@ export async function settleBinaryPositions(
   }
 
   const digest = result.Transaction?.digest ?? '';
-  log.info({ digest, portfolioId, oracleId, count: marketKeys.length }, 'positions settled');
+  log.info({ digest, portfolioId, oracleId, count: marketKeys.length }, 'binary positions settled');
 
   return { tx_digest: digest, positions_settled: marketKeys.length, payout_raw: 0n };
 }
 
+// ── Range settlement ──────────────────────────────────────────────────────────
+
 /**
- * Settle all range positions for a given oracle.
+ * Settle range positions for the given oracle.
  *
- * Range positions are settled via redeem_range which requires the keeper
- * to be the manager owner. The range key encodes the strike range.
+ * redeem_range requires the manager and oracle to match the position key.
+ * After all redeems, withdraws full manager balance into the portfolio.
  */
 export async function settleRangePositions(
   client: SuiGrpcClient,
@@ -123,29 +195,53 @@ export async function settleRangePositions(
   const tx = new Transaction();
 
   for (let i = 0; i < rangeKeys.length; i++) {
-    const key = rangeKeys[i]!;
-    const qty  = quantities[i]!;
+    const rawKey = rangeKeys[i]!;
+    const qty    = quantities[i]!;
+    const parsed = parseRangeKey(rawKey);
 
-    // redeem_range<DUSDC>(predict, manager, oracle, key, quantity, clock) → Coin<DUSDC>
-    const payout = tx.moveCall({
+    // Build RangeKey struct: range_key::new(oracle_id: ID, expiry: u64, lower: u64, upper: u64)
+    const onchainKey = tx.moveCall({
+      target: `${PREDICT_PKG()}::range_key::new`,
+      typeArguments: [],
+      arguments: [
+        tx.pure.id(parsed.oracleId),
+        tx.pure.u64(parsed.expiryMs),
+        tx.pure.u64(parsed.lowerStrikeRaw),
+        tx.pure.u64(parsed.upperStrikeRaw),
+      ],
+    });
+
+    // redeem_range → void; payout added to manager's internal balance.
+    tx.moveCall({
       target: `${PREDICT_PKG()}::predict::redeem_range`,
       typeArguments: [DUSDC],
       arguments: [
         tx.object(PREDICT_OBJ()),
         tx.object(managerId),
         tx.object(oracleId),
-        tx.pure.string(key),
+        onchainKey,
         tx.pure.u64(qty),
         tx.object(CLOCK_ID),
       ],
     });
-
-    tx.moveCall({
-      target: `${SONARK_PKG()}::portfolio::store_quote`,
-      typeArguments: [DUSDC],
-      arguments: [tx.object(portfolioId), payout],
-    });
   }
+
+  // Withdraw all manager balance (payout + any leftover premium) into portfolio.
+  const bal = tx.moveCall({
+    target: `${PREDICT_PKG()}::predict_manager::balance`,
+    typeArguments: [],
+    arguments: [tx.object(managerId)],
+  });
+  const payoutCoin = tx.moveCall({
+    target: `${PREDICT_PKG()}::predict_manager::withdraw`,
+    typeArguments: [DUSDC],
+    arguments: [tx.object(managerId), bal],
+  });
+  tx.moveCall({
+    target: `${SONARK_PKG()}::portfolio::store_quote`,
+    typeArguments: [DUSDC],
+    arguments: [tx.object(portfolioId), payoutCoin],
+  });
 
   const result = await withRetry(
     () => client.core.signAndExecuteTransaction({

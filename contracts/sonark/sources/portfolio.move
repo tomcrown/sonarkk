@@ -17,7 +17,7 @@
 module sonark::portfolio;
 
 use sonark::{
-    mock_lending::{MockLending, LendingReceipt, accrue_yield, new_receipt, reduce_principal, principal},
+    mock_lending::{MockLending, LendingReceipt, accrue_yield, preview_yield, admin_fast_forward_yield, new_receipt, reduce_principal, principal},
     policy::{Self, PolicyCap},
 };
 use std::type_name::{Self, TypeName};
@@ -629,6 +629,22 @@ public fun withdraw_principal<Q>(
     coin::from_balance(balance::split(&mut portfolio.quote_balance, amount), ctx)
 }
 
+/// Testnet-only: fast-forward a portfolio's lending receipt timestamp so that
+/// the next claim_yield_from_lending returns `elapsed_ms` worth of yield.
+///
+/// Useful for keeper testing when real time-based accrual is too slow.
+/// Calls mock_lending::admin_fast_forward_yield which enforces lending.admin check.
+public fun admin_fast_forward_portfolio_yield<Q>(
+    portfolio: &mut SonarkPortfolio<Q>,
+    lending: &MockLending,
+    elapsed_ms: u64,
+    ctx: &TxContext,
+) {
+    assert!(portfolio.principal_state.is_some(), ENoPrincipalState);
+    let state = portfolio.principal_state.borrow_mut();
+    admin_fast_forward_yield(lending, &mut state.receipt, elapsed_ms, ctx);
+}
+
 /// Disable strategy ④ once all principal has been withdrawn and yield settled.
 /// Clears PrincipalState so it reports None.
 public fun disable_principal_protected<Q>(
@@ -713,6 +729,18 @@ public fun locked_principal<Q>(p: &SonarkPortfolio<Q>): u64 {
 public fun yield_accumulated<Q>(p: &SonarkPortfolio<Q>): u64 {
     if (p.principal_state.is_none()) return 0;
     p.principal_state.borrow().yield_accumulated
+}
+
+/// Preview accrued yield without mutating any state.
+/// Used by keeper DevInspect to know the yield amount before building the PTB.
+public fun preview_portfolio_yield<Q>(
+    portfolio: &SonarkPortfolio<Q>,
+    lending: &MockLending,
+    clock: &Clock,
+): u64 {
+    if (portfolio.principal_state.is_none()) return 0;
+    let state = portfolio.principal_state.borrow();
+    preview_yield(&state.receipt, lending, clock)
 }
 
 // === Private Helpers ===
