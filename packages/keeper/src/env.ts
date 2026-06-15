@@ -63,10 +63,24 @@ const keeperEnvSchema = z.object({
   // Required for PRINCIPAL_PROTECTED portfolios.
   MOCK_LENDING_ID: z.string().optional(),
 
+  // MockMargin shared object ID (deployed by setup.ts, used by strategy ⑧ MARGIN_LOOP).
+  // Required for MARGIN_LOOP portfolios.
+  MOCK_MARGIN_ID: z.string().optional(),
+
   // PREDICT_PACKAGE is already above — PREDICT_REGISTRY used for create_manager.
   PREDICT_REGISTRY: z.string().default(
     '0x43af14fed5480c20ff77e2263d5f794c35b9fab7e2212903127062f4fe2a6e64',
   ),
+
+  // Seal key server object IDs (comma-separated). From https://seal-docs.wal.app/
+  // Defaults are the two Mysten Labs independent key servers on Sui testnet.
+  SEAL_KEY_SERVER_IDS: z.string().default(
+    '0x2c898d7d5e4d9be2a0ad91f5c8dba8440cbbdc5296a90fc15f57c1f3ac5d48e3,' +
+    '0x34d5b90e5b7571538e38b2e07c02a5ae9d82e1c1c05e5e5f10e69e9e4e93f43',
+  ),
+
+  // Walrus aggregator URL for reading blobs (to fetch encrypted vault configs).
+  WALRUS_AGGREGATOR_URL: z.string().url().default('https://aggregator.walrus-testnet.walrus.space'),
 });
 
 export type KeeperEnv = z.infer<typeof keeperEnvSchema>;

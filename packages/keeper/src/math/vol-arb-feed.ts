@@ -223,58 +223,131 @@ async function fetchPredictTrailingVol(predictServerUrl: string): Promise<{ vol:
   }
 }
 
-// ── Polymarket (documented, no current BTC markets) ───────────────────────────
+// ── Polymarket BTC binary markets ─────────────────────────────────────────────
+//
+// Live BTC updown markets roll every 5 minutes with slug pattern:
+//   btc-updown-5m-{end_unix_timestamp}  (5-minute windows)
+//   btc-updown-15m-{end_unix_timestamp} (15-minute windows)
+//
+// Prices near 50/50 (e.g. ["0.505","0.495"]) for Up/Down.
+//
+// Vol inversion caveat: ATM binary price = N(d2) where d2 = -σ√T/2.
+// For T < 1 hour σ√T → 0, so all prices → 0.5 regardless of vol.
+// The inversion is degenerate for short T — only attempt for T ≥ 1 hour.
+
+const GAMMA_API = 'https://gamma-api.polymarket.com';
+// Sub-1-hour markets price at ≈0.5 regardless of vol; vol inversion is meaningless.
+const MIN_POLYMARKET_T_YEARS = 1 / 8760; // 1 hour
 
 interface PolymarketMarket {
   condition_id: string;
-  question: string;
-  outcomes: string[];
-  outcomePrices: string[];
+  question?: string;
+  slug?: string;
+  outcomes?: string[];
+  outcomePrices?: string[];
   active: boolean;
+  closed?: boolean;
+  // End timestamp field varies by response shape:
+  endDate?: string;
   expiry_timestamp?: string;
+  end?: string;
 }
 
 async function fetchPolymarketBtcSignal(): Promise<{ vol: number; source: 'polymarket'; market: string } | null> {
   try {
-    const url = 'https://gamma-api.polymarket.com/markets?active=true&tag=crypto&limit=100';
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const markets = await res.json() as PolymarketMarket[];
+    const nowMs = Date.now();
+    const nowS = Math.floor(nowMs / 1000);
+    const foundMarkets: PolymarketMarket[] = [];
 
-    // Filter for BTC price prediction markets.
-    const btcMarkets = markets.filter(m =>
-      m.question.toLowerCase().includes('bitcoin') ||
-      m.question.toLowerCase().includes('btc'),
-    );
+    // ── Strategy 1: direct slug lookup for current + upcoming 5m/15m windows ──
+    // Round up to next 5-min boundary, try current + 3 upcoming windows.
+    const slugsToTry: string[] = [];
+    for (let i = 0; i <= 3; i++) {
+      const endS = Math.ceil((nowS + 1 + i * 300) / 300) * 300;
+      slugsToTry.push(`btc-updown-5m-${endS}`);
+    }
+    for (let i = 0; i <= 2; i++) {
+      const endS = Math.ceil((nowS + 1 + i * 900) / 900) * 900;
+      slugsToTry.push(`btc-updown-15m-${endS}`);
+    }
+    for (const slug of slugsToTry) {
+      try {
+        const res = await fetch(`${GAMMA_API}/markets?slug=${encodeURIComponent(slug)}`);
+        if (!res.ok) continue;
+        const data = await res.json() as PolymarketMarket[];
+        if (Array.isArray(data)) {
+          const active = data.filter(m => m.active && !m.closed);
+          if (active.length > 0) { foundMarkets.push(...active); break; }
+        }
+      } catch { /* ignore per-slug failures */ }
+    }
 
-    if (btcMarkets.length === 0) {
-      log.info('Polymarket: no active BTC markets found (only historical 2023 events available)');
+    // ── Strategy 2: keyword search over recent market history ──
+    // Uses offset=5000 which is where BTC updown markets appear in the sorted list.
+    if (foundMarkets.length === 0) {
+      try {
+        const url = `${GAMMA_API}/markets?active=true&closed=false&limit=200&offset=5000&order=startDate&ascending=false`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json() as PolymarketMarket[];
+          if (Array.isArray(data)) {
+            const btc = data.filter(m =>
+              m.active && !m.closed && (
+                m.slug?.includes('btc') ||
+                m.question?.toLowerCase().includes('btc') ||
+                m.question?.toLowerCase().includes('bitcoin')
+              ),
+            );
+            foundMarkets.push(...btc);
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    if (foundMarkets.length === 0) {
+      log.info('Polymarket: no active BTC markets found via slug or keyword search');
       return null;
     }
 
-    // Pick the most liquid ATM binary (closest to 50 cents).
-    const candidates = btcMarkets
-      .filter(m => m.outcomePrices?.length >= 2 && m.expiry_timestamp)
+    // ── Pick candidate with the longest T (most informative for vol inversion) ──
+    const candidates = foundMarkets
+      .filter(m => (m.outcomePrices?.length ?? 0) >= 2)
       .map(m => {
-        const price = parseFloat(m.outcomePrices[0] ?? '0.5');
-        const dif = Math.abs(price - 0.5);
-        return { market: m, price, dif };
+        const rawEnd = m.endDate ?? m.expiry_timestamp ?? m.end ?? '';
+        const endMs = rawEnd ? new Date(rawEnd).getTime() : 0;
+        const t_years = endMs > nowMs ? (endMs - nowMs) / (365.25 * 24 * 60 * 60 * 1000) : 0;
+        const price = parseFloat(m.outcomePrices![0] ?? '0.5');
+        return { market: m, price, t_years };
       })
-      .sort((a, b) => a.dif - b.dif);
+      .filter(c => c.t_years > 0)
+      .sort((a, b) => b.t_years - a.t_years);
 
     if (candidates.length === 0) return null;
 
-    const { market, price } = candidates[0]!;
-    const expiryMs = market.expiry_timestamp ? new Date(market.expiry_timestamp).getTime() : 0;
-    const t_years = Math.max(0, (expiryMs - Date.now()) / (365.25 * 24 * 60 * 60 * 1000));
-    if (t_years <= 0) return null;
+    const best = candidates[0]!;
 
-    // We'd need the current BTC spot to compute F/K. Use 1.0 (ATM assumption).
-    const impliedVol = binaryPriceToImpliedVol(price, 1.0, 1.0, t_years);
+    // Sub-1-hour markets: price ≈ 0.5 regardless of vol — inversion degenerates to σ → ∞.
+    // Log for observability but return null; Hyperliquid (primary) handles vol estimation.
+    if (best.t_years < MIN_POLYMARKET_T_YEARS) {
+      log.info(
+        { slug: best.market.slug, t_hours: (best.t_years * 8760).toFixed(2), price: best.price },
+        'Polymarket BTC market found but T < 1h — binary price ≈ 0.5 (degenerate), skipping vol inversion',
+      );
+      return null;
+    }
+
+    const impliedVol = binaryPriceToImpliedVol(best.price, 1.0, 1.0, best.t_years);
     if (impliedVol === null) return null;
 
-    log.info({ question: market.question, price, impliedVol, t_years }, 'Polymarket BTC binary signal');
-    return { vol: impliedVol, source: 'polymarket', market: market.question };
+    // Sanity-check: degenerate vol (>500%) still means T too short for the formula.
+    if (impliedVol > 5.0) {
+      log.warn({ impliedVol, t_years: best.t_years }, 'Polymarket implied vol degenerate (>500%) — skipping');
+      return null;
+    }
+
+    const label = best.market.question ?? best.market.slug ?? 'btc-binary';
+    log.info({ label, price: best.price, impliedVol, t_years: best.t_years }, 'Polymarket BTC binary signal');
+    return { vol: impliedVol, source: 'polymarket', market: label };
   } catch (err) {
     log.warn({ err }, 'Polymarket fetch failed');
     return null;

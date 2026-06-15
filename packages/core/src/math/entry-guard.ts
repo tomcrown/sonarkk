@@ -25,6 +25,17 @@ import type { SviParams } from './delta.js';
 
 // ── Thresholds ─────────────────────────────────────────────────────────────
 
+/**
+ * Hard technical floor — no user or override can go below this.
+ *
+ * Below 10% ATM vol, SVI calibration becomes mathematically unreliable:
+ * binary probabilities collapse toward 0.5 with no meaningful variance signal,
+ * and the spread sanity check may still pass while prices are untrustworthy.
+ * The confirmed working oracle range observed in Phase 4 was 13–46%; 10% is
+ * the absolute lower bound for technically executable (not necessarily wise) trades.
+ */
+export const HARD_VOL_FLOOR = 0.10;
+
 // Production thresholds (CLAUDE.md binding implementation Rule 4).
 // Override via MIN_ATM_VOL_OVERRIDE_JSON env variable for testnet testing.
 // Example: MIN_ATM_VOL_OVERRIDE_JSON='{"range_roll":0.13,"vol_targeted_range":0.13,"vol_arb_sell":0.10}'
@@ -37,6 +48,7 @@ const PRODUCTION_MIN_ATM_VOL: Record<StrategyId, number> = {
   range_roll:          0.28,
   vol_targeted_range:  0.28,
   vol_arb_sell:        0.22,
+  margin_loop:         0.15,  // house-adjacent; earns at any vol above floor
 };
 
 function buildMinAtmVol(): Record<StrategyId, number> {
@@ -65,7 +77,8 @@ export type StrategyId =
   | 'principal_protected'
   | 'range_roll'
   | 'vol_targeted_range'
-  | 'vol_arb_sell';
+  | 'vol_arb_sell'
+  | 'margin_loop';
 
 // ── Spread computation ─────────────────────────────────────────────────────
 
@@ -85,34 +98,55 @@ export interface EntryGuardResult {
   reason?: string;
   atm_vol: number;
   atm_spread: number;
-  min_vol_threshold: number;
+  min_vol_threshold: number;       // effective threshold used (after floor clamp)
+  system_default_threshold: number; // system default for this strategy (before override)
+  hard_floor_applied: boolean;     // true if user override was below HARD_VOL_FLOOR
 }
 
 /**
  * Determine whether the keeper should skip this expiry for a given strategy.
  *
- * @param svi          Current oracle SVI params.
- * @param t_years      Time to expiry in years.
- * @param utilization  Current pool utilization fraction (0–1).
- * @param strategy     Which strategy is asking.
+ * @param svi                Current oracle SVI params.
+ * @param t_years            Time to expiry in years.
+ * @param utilization        Current pool utilization fraction (0–1).
+ * @param strategy           Which strategy is asking.
+ * @param minAtmVolOverride  Per-portfolio override (from Portfolio.minAtmVolOverride).
+ *                           Must be >= HARD_VOL_FLOOR (10%) — lower values are clamped.
+ *                           undefined = use system default for this strategy.
  */
 export function shouldSkipExpiry(
   svi: SviParams,
   t_years: number,
   utilization: number,
   strategy: StrategyId,
+  minAtmVolOverride?: number | null,
 ): EntryGuardResult {
   const atm_vol_val = atmVol(svi, t_years);
-  const threshold = MIN_ATM_VOL[strategy];
+
+  // Resolve effective threshold:
+  // 1. Start with system default for this strategy.
+  // 2. If user provided an override, apply it (they may raise OR lower the default).
+  // 3. Hard floor: clamp to HARD_VOL_FLOOR regardless of any override.
+  //    Below 10%, oracle calibration is unreliable — this is non-negotiable.
+  const system_default = MIN_ATM_VOL[strategy];
+  const user_threshold = minAtmVolOverride != null ? minAtmVolOverride : system_default;
+  const threshold = Math.max(HARD_VOL_FLOOR, user_threshold);
+
+  const hard_floor_applied = user_threshold < HARD_VOL_FLOOR;
+  const shared = {
+    system_default_threshold: system_default,
+    hard_floor_applied,
+    min_vol_threshold: threshold,
+  };
 
   // ATM vol check.
   if (atm_vol_val < threshold) {
     return {
       skip: true,
-      reason: `ATM vol ${(atm_vol_val * 100).toFixed(1)}% < ${(threshold * 100).toFixed(0)}% threshold for ${strategy}`,
+      reason: `ATM vol ${(atm_vol_val * 100).toFixed(1)}% < ${(threshold * 100).toFixed(0)}% threshold for ${strategy}${hard_floor_applied ? ' (hard floor applied — user override was below 10%)' : ''}`,
       atm_vol: atm_vol_val,
       atm_spread: 0,
-      min_vol_threshold: threshold,
+      ...shared,
     };
   }
 
@@ -125,9 +159,9 @@ export function shouldSkipExpiry(
       reason: `ATM spread ${atm_spread.toFixed(4)} ≤ floor+margin (${(FLOOR_SPREAD + SPREAD_SANITY_MARGIN).toFixed(4)}) — likely oracle miscalibration`,
       atm_vol: atm_vol_val,
       atm_spread,
-      min_vol_threshold: threshold,
+      ...shared,
     };
   }
 
-  return { skip: false, atm_vol: atm_vol_val, atm_spread, min_vol_threshold: threshold };
+  return { skip: false, atm_vol: atm_vol_val, atm_spread, ...shared };
 }

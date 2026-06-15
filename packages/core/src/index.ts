@@ -7,7 +7,7 @@ export type { Oracle, OraclePrice, OracleSvi } from './predict-client.js';
 export { fetchPredictVaultState, computeNav, formatNavComponents } from './math/nav.js';
 export type { NavInputs, NavComponents, OpenBettorPosition } from './math/nav.js';
 
-export { shouldSkipExpiry, computeSpread, MIN_ATM_VOL } from './math/entry-guard.js';
+export { shouldSkipExpiry, computeSpread, MIN_ATM_VOL, HARD_VOL_FLOOR } from './math/entry-guard.js';
 export type { StrategyId, EntryGuardResult } from './math/entry-guard.js';
 
 export {

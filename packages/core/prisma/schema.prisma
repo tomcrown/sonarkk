@@ -128,6 +128,37 @@ model Portfolio {
   managerId        String?
   // VaultConfig this portfolio belongs to (null = standalone portfolio).
   vaultConfigId    String?
+
+  // ── Phase 7: Per-portfolio bot configuration ────────────────────────────
+  // Fraction of available balance deployed per cycle. Default 25%.
+  // Range: 0.01–1.0. Hard floor enforced by keeper.
+  utilTarget           Float    @default(0.25)
+  // Vol-Targeted Range only: target annualised vol for position sizing (bps, e.g. 2000 = 20%).
+  // null = use system default (2000).
+  volTargetBps         Int?
+  // Per-portfolio minimum ATM vol to activate. Must be >= 10% (hard floor).
+  // null = use system default per strategy type.
+  minAtmVolOverride    Float?
+  // Strike selection for bettor strategies. ATM | OTM_1 (1% OTM) | OTM_2 (2% OTM).
+  // For range strategies, OTM widens the range: ATM=500bps, OTM_1=1000bps, OTM_2=1500bps.
+  strikeSelection      String   @default("ATM")
+  // Fraction of portfolio balance the keeper never deploys (held as withdrawal buffer).
+  // 0.10 = always keep 10% idle. Default 0 (no reserve beyond budget cap).
+  liquidityReservePct  Float    @default(0.0)
+  // Drawdown protection: if NAV per share drops this fraction from its all-time high,
+  // the keeper pauses new deployments. null = disabled. E.g. 0.10 = pause at -10% from peak.
+  drawdownPauseThresholdPct Float?
+  // Stop-loss: if total portfolio NAV (raw DUSDC) drops to or below this floor,
+  // the keeper permanently deactivates the portfolio until user reviews. null = disabled.
+  stopLossFloorRaw     BigInt?
+  // Keeper-tracked peak NAV per share (raw, 1e6 scale). Updated each cycle.
+  // Used to compute drawdown from high watermark.
+  peakNavPerShareRaw   BigInt?
+  // Set true by keeper when drawdown threshold is breached. User must manually un-pause.
+  isPaused             Boolean  @default(false)
+  // Human-readable reason for pause or stop-loss halt.
+  pauseReason          String?
+
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -173,6 +204,17 @@ model VaultConfig {
   allocations     String   @default("[]")
   isPublic        Boolean  @default(true)        // visible in leaderboard
   isActive        Boolean  @default(true)
+  // ── Phase 7: Deploy-time PolicyCap settings (recorded at creation) ──────
+  // Budget cap per cycle in raw DUSDC (PolicyCap.budget_cap).
+  // null = keeper default (50% of deposit).
+  budgetCapPerCycleRaw  BigInt?
+  // How many days until PolicyCap expires. After expiry keeper cannot act until renewed.
+  policyExpiryDays      Int      @default(30)
+  // Seal blob reference ID for private vaults (hex string). null = public vault.
+  // Set at deploy time, immutable after. Associates this vault with its Seal-encrypted config.
+  sealBlobId            String?
+  // Copy fee in raw DUSDC for private vaults. null = free (public vault).
+  copyFeeRaw            BigInt?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -289,5 +331,49 @@ model KeeperCycle {
   // If the crash is after this record, the duplicate is silently skipped.
   @@unique([portfolioId, expiryMs])
   @@index([oracleId])
+  @@index([portfolioId])
+}
+
+// ---- Phase 7: Walrus daily performance snapshots ----
+// Written once per day by the daily-snapshot job in the keeper.
+// blobId is the Walrus blob reference — also emitted as a Sui event for on-chain anchor.
+// Anyone can verify leaderboard data by fetching blobs independently from Walrus.
+model WalrusSnapshot {
+  id              String   @id @default(cuid())
+  snapshotDate    String   @unique   // ISO date string "YYYY-MM-DD"
+  blobId          String?            // Walrus blob reference ID (hex). null if write failed.
+  suiEventDigest  String?            // TX digest of the Sui event that anchors this blob on-chain.
+  // JSON array of per-portfolio NAV snapshots included in this blob.
+  // [{ portfolioId, objectId, strategy, navPerShareRaw, totalNavRaw, cycleCount }]
+  portfolioData   String   @default("[]")
+  // JSON array of per-vault combined NAV snapshots.
+  // [{ vaultConfigId, name, combinedTvlRaw, cycleCount }]
+  vaultData       String   @default("[]")
+  writtenAt       DateTime @default(now())
+  writeError      String?  // set if Walrus write failed; DB record still written for audit trail
+
+  @@index([snapshotDate])
+}
+
+// ---- Phase 7: Margin Loop strategy state ----
+// Tracks the active borrow position for the MARGIN_LOOP strategy.
+// One row per portfolio while a margin borrow is active.
+model MarginLoopState {
+  id                  String   @id @default(cuid())
+  portfolioId         String   @unique
+  // Collateral locked in mock_margin (raw DUSDC)
+  collateralRaw       BigInt
+  // Amount borrowed from mock_margin (raw DUSDC)
+  borrowedRaw         BigInt
+  // mock_margin receipt object ID (tracks borrow on-chain)
+  marginReceiptId     String?
+  // Borrow opened at this TX
+  openTxDigest        String?
+  // Whether the borrow is currently active
+  isActive            Boolean  @default(true)
+  openedAt            DateTime @default(now())
+  closedAt            DateTime?
+  closeTxDigest       String?
+
   @@index([portfolioId])
 }

@@ -64,17 +64,31 @@ function applyBudgetCap(ideal_raw: bigint, policy_budget_raw: bigint): SizingRes
 // ── Strategy sizing functions ──────────────────────────────────────────────
 
 /**
+ * Apply liquidity reserve before sizing.
+ * The reserve is a fraction of available balance the keeper never deploys.
+ * Returns reduced available balance after subtracting the reserve.
+ */
+function applyLiquidityReserve(available_raw: bigint, reserve_pct: number): bigint {
+  if (reserve_pct <= 0) return available_raw;
+  const reserve = BigInt(Math.floor(Number(available_raw) * Math.min(reserve_pct, 0.95)));
+  return available_raw > reserve ? available_raw - reserve : 0n;
+}
+
+/**
  * ① PLP Supplier
  * Simple utilization of available balance.
  * @param available_balance_raw  Available DUSDC (quote_balance - locked - yield).
  * @param policy_budget_raw      Remaining PolicyCap budget.
- * @param util_target            Target utilization fraction (default 0.25).
+ * @param util_target            Target utilization fraction (default 0.25). From Portfolio.utilTarget.
+ * @param liquidity_reserve_pct  Fraction of balance never deployed (default 0). From Portfolio.liquidityReservePct.
  */
 export function sizePlpSupplier(
   available_balance_raw: bigint,
   policy_budget_raw: bigint,
   util_target = DEFAULT_HOUSE_UTIL,
+  liquidity_reserve_pct = 0,
 ): SizingResult {
+  available_balance_raw = applyLiquidityReserve(available_balance_raw, liquidity_reserve_pct);
   if (available_balance_raw <= 0n) {
     return { size_raw: 0n, ideal_size_raw: 0n, is_budget_capped: false, utilization_fraction: 0, skip_reason: 'zero available balance' };
   }
@@ -87,17 +101,14 @@ export function sizePlpSupplier(
 /**
  * ② Hedged-PLP
  * Same sizing as ① but the hedge leg is sized separately (see hedge.ts).
- * The supply leg and the hedge leg share the same policy budget, so the
- * supply is sized at util_target of available and the hedge is whatever
- * budget remains after the supply transaction is computed.
  */
 export function sizeHedgedPlp(
   available_balance_raw: bigint,
   policy_budget_raw: bigint,
   util_target = DEFAULT_HOUSE_UTIL,
+  liquidity_reserve_pct = 0,
 ): SizingResult {
-  // Identical sizing to PLP Supplier — the hedge reservation is handled separately.
-  return sizePlpSupplier(available_balance_raw, policy_budget_raw, util_target);
+  return sizePlpSupplier(available_balance_raw, policy_budget_raw, util_target, liquidity_reserve_pct);
 }
 
 /**
@@ -118,7 +129,9 @@ export function sizeSmartVault(
   policy_budget_raw: bigint,
   hedged_plp_weight = 0.6,
   util_target = DEFAULT_HOUSE_UTIL,
+  liquidity_reserve_pct = 0,
 ): { hedged_plp: SizingResult; plp_supplier: SizingResult } {
+  available_balance_raw = applyLiquidityReserve(available_balance_raw, liquidity_reserve_pct);
   const total_ideal_raw = BigInt(Math.floor(Number(available_balance_raw) * util_target));
   const hedged_raw = BigInt(Math.floor(Number(total_ideal_raw) * hedged_plp_weight));
   const plp_raw = total_ideal_raw - hedged_raw;
@@ -169,8 +182,9 @@ export function sizeRangeRoll(
   available_balance_raw: bigint,
   policy_budget_raw: bigint,
   util_target = DEFAULT_HOUSE_UTIL,
+  liquidity_reserve_pct = 0,
 ): SizingResult {
-  return sizePlpSupplier(available_balance_raw, policy_budget_raw, util_target);
+  return sizePlpSupplier(available_balance_raw, policy_budget_raw, util_target, liquidity_reserve_pct);
 }
 
 /**
@@ -190,7 +204,9 @@ export function sizeVolTargetedRange(
   atm_vol_annual: number,
   util_target = DEFAULT_HOUSE_UTIL,
   target_vol = BETTOR_TARGET_VOL,
+  liquidity_reserve_pct = 0,
 ): SizingResult {
+  available_balance_raw = applyLiquidityReserve(available_balance_raw, liquidity_reserve_pct);
   if (available_balance_raw <= 0n) {
     return { size_raw: 0n, ideal_size_raw: 0n, is_budget_capped: false, utilization_fraction: 0, skip_reason: 'zero available balance' };
   }
@@ -217,7 +233,9 @@ export function sizeVolArb(
   available_balance_raw: bigint,
   policy_budget_raw: bigint,
   arb_confidence: number,
+  liquidity_reserve_pct = 0,
 ): SizingResult {
+  available_balance_raw = applyLiquidityReserve(available_balance_raw, liquidity_reserve_pct);
   if (available_balance_raw <= 0n) {
     return { size_raw: 0n, ideal_size_raw: 0n, is_budget_capped: false, utilization_fraction: 0, skip_reason: 'zero available balance' };
   }

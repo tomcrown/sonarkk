@@ -1,9 +1,9 @@
 /**
- * deploy-all-strategies.ts — Deploy all 7 strategies for Phase 6 testing.
+ * deploy-all-strategies.ts — Deploy all 8 strategies for Phase 7 testing.
  *
  * What it does:
- *   1. Deploys one SonarkPortfolio<DUSDC> per strategy (7 total).
- *   2. For bettor strategies (④⑤⑥⑦), creates a PredictManager and registers it.
+ *   1. Deploys one SonarkPortfolio<DUSDC> per strategy (8 total).
+ *   2. For bettor strategies (④⑤⑥⑦⑧), creates a PredictManager and registers it.
  *   3. For strategy ④ PRINCIPAL_PROTECTED, enables the principal-protected mode.
  *   4. Deposits DUSDC into each portfolio per the budget allocation below.
  *   5. Registers all portfolios in the DB.
@@ -12,7 +12,7 @@
  *      b. "Alice's Bot" — HEDGED_PLP 60% + RANGE_ROLL 40% (multi-strategy demo)
  *   7. Prints all object IDs and DB record IDs for .env additions.
  *
- * Budget: 100 DUSDC total. Allocation:
+ * Budget: 110 DUSDC total. Allocation:
  *   ① PLP_SUPPLIER        — 15 DUSDC
  *   ② HEDGED_PLP          — 20 DUSDC
  *   ③ SMART_VAULT         — 15 DUSDC
@@ -20,6 +20,7 @@
  *   ⑤ RANGE_ROLL          — 10 DUSDC
  *   ⑥ VOL_TARGETED_RANGE  — 10 DUSDC
  *   ⑦ CROSS_VENUE_ARB     — 10 DUSDC
+ *   ⑧ MARGIN_LOOP         — 10 DUSDC (collateral; borrowed DUSDC goes to mint_range)
  *   Reserve (gas + fees)  — 5 DUSDC
  *
  * Run:
@@ -55,18 +56,15 @@ const STRATEGY_DEPOSITS: Record<string, bigint> = {
   RANGE_ROLL:           5_000_000n,   //  5 DUSDC (reduced for budget)
   VOL_TARGETED_RANGE:   5_000_000n,   //  5 DUSDC
   CROSS_VENUE_ARB:      5_000_000n,   //  5 DUSDC
+  MARGIN_LOOP:         10_000_000n,   // 10 DUSDC (collateral; keeper borrows against it to mint_range)
 };
 
 // Known orphaned PRINCIPAL_PROTECTED portfolio (deployed but not in DB due to prior failure).
-// Set to null if not applicable.
-const PP_RESUME: { portfolioId: string; policyCapId: string; managerId: string | null } | null = {
-  portfolioId: '0x4848b7b192d80848ce6832db3bf7a7c5784cf6b929a55f4e92d6fdcc14ec0c46',
-  policyCapId: '0x99729e8a0187fed9d1d8e9885bb5de7a51d943268cac471613bd835312d34d39',
-  managerId:   '0xff36e9270858c5c257a906928277c0c54da2fd46e0cfb51a2832d1a1e18d60b3',
-};
+// Set to null when doing a full redeploy from scratch (e.g. after contract republish).
+const PP_RESUME: { portfolioId: string; policyCapId: string; managerId: string | null } | null = null;
 
-// Strategies that need a PredictManager (bettor strategies + ④).
-const NEEDS_MANAGER = new Set(['PRINCIPAL_PROTECTED', 'RANGE_ROLL', 'VOL_TARGETED_RANGE', 'CROSS_VENUE_ARB']);
+// Strategies that need a PredictManager (bettor strategies + ④⑧).
+const NEEDS_MANAGER = new Set(['PRINCIPAL_PROTECTED', 'RANGE_ROLL', 'VOL_TARGETED_RANGE', 'CROSS_VENUE_ARB', 'MARGIN_LOOP']);
 
 // Strategy ④ principal amount (14 DUSDC of the 15 DUSDC deposit).
 const PRINCIPAL_PROTECTED_PRINCIPAL = 14_000_000n;
@@ -92,7 +90,7 @@ interface DeployedPortfolio {
 }
 
 async function main() {
-  console.log('=== Sonark Phase 6 — Deploy All 7 Strategies ===\n');
+  console.log('=== Sonark Phase 7 — Deploy All 8 Strategies ===\n');
 
   let keypair: Ed25519Keypair;
   try {
@@ -429,7 +427,7 @@ async function main() {
   console.log(`    House Vault   : ${houseVaultId}`);
   console.log(`    Alice's Bot   : ${alicesVaultId}`);
   console.log('\n  Next steps:');
-  console.log('    pnpm --filter @sonarkk/keeper exec tsx src/phase6-e2e-test.ts');
+  console.log('    pnpm --filter @sonarkk/keeper run phase7-e2e');
   console.log('═'.repeat(66));
 
   await disconnectPrisma();

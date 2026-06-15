@@ -52,6 +52,50 @@ export interface BettorExecuteResult {
   oracle_id: string;
 }
 
+/**
+ * Strike selection — controls how far from ATM the keeper places bets.
+ *
+ * For binary strategies (CROSS_VENUE_ARB):
+ *   ATM    → strike = forwardRaw floored to nearest $1
+ *   OTM_1  → strike ±1% from ATM (call=above, put=below)
+ *   OTM_2  → strike ±2% from ATM
+ *
+ * For range strategies (RANGE_ROLL, VOL_TARGETED_RANGE):
+ *   ATM    → ±5% range width (rangeWidthBps = 500)
+ *   OTM_1  → ±10% range width (rangeWidthBps = 1000) — wider, lower win probability
+ *   OTM_2  → ±15% range width (rangeWidthBps = 1500) — widest, highest payout if won
+ *
+ * Lower win probability = higher payout per contract if the position wins.
+ * Users who are very confident in low vol pick OTM for higher reward.
+ */
+export type StrikeSelection = 'ATM' | 'OTM_1' | 'OTM_2';
+
+const OTM_BINARY_OFFSET_BPS: Record<StrikeSelection, bigint> = {
+  ATM:   0n,
+  OTM_1: 100n,  // 1% from ATM
+  OTM_2: 200n,  // 2% from ATM
+};
+
+const OTM_RANGE_WIDTH_BPS: Record<StrikeSelection, bigint> = {
+  ATM:   500n,   // ±5%  from ATM
+  OTM_1: 1000n,  // ±10% from ATM
+  OTM_2: 1500n,  // ±15% from ATM
+};
+
+/** Compute binary strike from forward price and selection. */
+function computeBinaryStrike(forwardRaw: bigint, selection: StrikeSelection, isCall: boolean): bigint {
+  const TICK = 1_000_000_000n;
+  const atm = (forwardRaw / TICK) * TICK;
+  const offset = atm * OTM_BINARY_OFFSET_BPS[selection] / 10000n;
+  // Calls go above ATM, puts go below ATM for OTM positions.
+  return isCall ? atm + offset : atm - offset;
+}
+
+/** Compute range width in bps from selection. */
+function computeRangeWidthBps(selection: StrikeSelection): bigint {
+  return OTM_RANGE_WIDTH_BPS[selection];
+}
+
 // ── House strategies ①②③ ─────────────────────────────────────────────────────
 
 /**
@@ -168,18 +212,19 @@ export async function executeRangeCycle(
   policyCapId: string,
   managerId: string,
   oracleId: string,
-  expiryMs: bigint,       // oracle expiry timestamp in ms
-  forwardRaw: bigint,     // oracle forward price in nanoUSD (from OracleState.forward_raw)
+  expiryMs: bigint,
+  forwardRaw: bigint,
   navPerShare: bigint,
   sizing: SizingResult,
-  rangeWidthBps: bigint = 1000n,  // ±10% each side
+  strikeSelection: StrikeSelection = 'ATM',
 ): Promise<BettorExecuteResult> {
   const notional = sizing.size_raw;
   if (notional <= 0n) {
     throw new Error('executeRangeCycle called with zero notional');
   }
 
-  const TICK = 1_000_000_000n;  // $1 tick in nanoUSD
+  const TICK = 1_000_000_000n;
+  const rangeWidthBps = computeRangeWidthBps(strikeSelection);
   const lowerStrikeRaw = (forwardRaw * (10000n - rangeWidthBps) / 10000n / TICK) * TICK;
   const upperStrikeRaw = (forwardRaw * (10000n + rangeWidthBps) / 10000n / TICK) * TICK;
 
@@ -291,19 +336,19 @@ export async function executeBinaryCycle(
   policyCapId: string,
   managerId: string,
   oracleId: string,
-  expiryMs: bigint,       // oracle expiry timestamp in ms
-  forwardRaw: bigint,     // oracle forward price in nanoUSD
+  expiryMs: bigint,
+  forwardRaw: bigint,
   navPerShare: bigint,
   sizing: SizingResult,
   isCall: boolean = true,
+  strikeSelection: StrikeSelection = 'ATM',
 ): Promise<BettorExecuteResult> {
   const notional = sizing.size_raw;
   if (notional <= 0n) {
     throw new Error('executeBinaryCycle called with zero notional');
   }
 
-  const TICK = 1_000_000_000n;  // $1 tick in nanoUSD
-  const strikeRaw = (forwardRaw / TICK) * TICK;  // floor to nearest $1
+  const strikeRaw = computeBinaryStrike(forwardRaw, strikeSelection, isCall);
 
   const tx = new Transaction();
 
@@ -549,6 +594,213 @@ export async function executePrincipalProtectedCycle(
     nav_pushed: navPerShare,
     yield_claimed_raw: yieldAmountRaw,
     bet_notional_raw: yieldAmountRaw,
+    market_key: marketKey,
+    oracle_id: oracleId,
+  };
+}
+
+// ── Margin Loop (⑧ three-protocol composability) ─────────────────────────────
+
+export interface MarginLoopSetupResult {
+  tx_digest: string;
+}
+
+export interface MarginLoopCycleResult {
+  tx_digest: string;
+  nav_pushed: bigint;
+  borrow_raw: bigint;
+  market_key: string;
+  oracle_id: string;
+}
+
+/**
+ * First-time setup: enable_margin_loop on the portfolio.
+ *
+ * Call this once before the first MARGIN_LOOP cycle. It locks `collateral_amount`
+ * DUSDC in the portfolio as margin collateral and initializes the MarginReceipt.
+ * The margin borrow capacity = LTV × collateral (e.g. 75% × collateral).
+ *
+ * On testnet, also call admin_fast_forward_margin_interest to generate meaningful
+ * interest for testing without waiting real time.
+ */
+export async function enableMarginLoopOnchain(
+  client: SuiGrpcClient,
+  keypair: Ed25519Keypair,
+  portfolioId: string,
+  policyCapId: string,
+  mockMarginId: string,
+  collateralAmountRaw: bigint,
+): Promise<MarginLoopSetupResult> {
+  const tx = new Transaction();
+
+  tx.moveCall({
+    target: `${SONARK_PKG()}::portfolio::enable_margin_loop`,
+    typeArguments: [DUSDC],
+    arguments: [
+      tx.object(portfolioId),
+      tx.object(mockMarginId),
+      tx.pure.u64(collateralAmountRaw),
+      tx.object(policyCapId),
+      tx.object(CLOCK_ID),
+    ],
+  });
+
+  const result = await withRetry(
+    () => client.core.signAndExecuteTransaction({
+      transaction: tx,
+      signer: keypair,
+      include: { effects: true },
+    }),
+    `enableMarginLoop(${portfolioId.slice(0, 8)}...)`,
+  );
+
+  if (result.$kind === 'FailedTransaction') {
+    throw new Error(`enable_margin_loop TX failed: ${JSON.stringify(result.FailedTransaction?.status)}`);
+  }
+  const tx_digest = result.Transaction!.digest;
+  await client.core.waitForTransaction({ digest: tx_digest });
+
+  log.info({ portfolioId, tx_digest, collateralAmountRaw }, 'margin loop enabled on-chain');
+  return { tx_digest };
+}
+
+/**
+ * Execute a MARGIN_LOOP cycle (strategy ⑧).
+ *
+ * Three-protocol composability: MockMargin + Predict.
+ * Settlement of the prior range position is handled separately by settleRangePositions()
+ * in the keeper loop's settle step — this PTB only handles borrow + deploy.
+ *
+ * PTB steps:
+ *   a. update_nav
+ *   b. (if repayAmountRaw > 0) repay_margin_borrow — repays prior borrow from settled payout
+ *      already credited to quote_balance by the settle step
+ *   c. take_for_margin_borrow → borrowed Coin<Q>
+ *   d. predict::mint_range with borrowed coin → change Coin<Q>
+ *   e. store_quote(change) — credit unused premium back to portfolio
+ *
+ * @param repayAmountRaw - amount to repay from prior cycle's payout (0 for first cycle)
+ */
+export async function executeMarginLoopCycle(
+  client: SuiGrpcClient,
+  keypair: Ed25519Keypair,
+  portfolioId: string,
+  policyCapId: string,
+  managerId: string,
+  mockMarginId: string,
+  oracleId: string,
+  expiryMs: bigint,
+  forwardRaw: bigint,
+  navPerShare: bigint,
+  borrowAmountRaw: bigint,
+  _priorMarketKey: string | null,      // unused: settlement runs separately
+  _priorExpiryMs: bigint | null,       // unused
+  _priorLowerStrikeRaw: bigint | null, // unused
+  _priorUpperStrikeRaw: bigint | null, // unused
+  repayAmountRaw: bigint,
+  strikeSelection: StrikeSelection = 'ATM',
+): Promise<MarginLoopCycleResult> {
+  if (borrowAmountRaw <= 0n) {
+    throw new Error('executeMarginLoopCycle: borrowAmountRaw must be > 0');
+  }
+
+  const TICK = 1_000_000_000n;
+
+  // New range position: ATM ±10% / OTM_1 ±15% / OTM_2 ±20%
+  const rangeHalfBps = strikeSelection === 'ATM' ? 10n : strikeSelection === 'OTM_1' ? 15n : 20n;
+  const lowerStrikeRaw = (forwardRaw * (100n - rangeHalfBps) / 100n / TICK) * TICK;
+  const upperStrikeRaw = (forwardRaw * (100n + rangeHalfBps) / 100n / TICK) * TICK;
+
+  const tx = new Transaction();
+
+  // (a) Update NAV
+  tx.moveCall({
+    target: `${SONARK_PKG()}::portfolio::update_nav`,
+    typeArguments: [DUSDC],
+    arguments: [
+      tx.object(portfolioId),
+      tx.pure.u64(navPerShare),
+      tx.object(policyCapId),
+      tx.object(CLOCK_ID),
+    ],
+  });
+
+  // (b) Repay prior borrow from settled payout already in quote_balance (skip if first cycle)
+  if (repayAmountRaw > 0n) {
+    tx.moveCall({
+      target: `${SONARK_PKG()}::portfolio::repay_margin_borrow`,
+      typeArguments: [DUSDC],
+      arguments: [
+        tx.object(portfolioId),
+        tx.object(mockMarginId),
+        tx.pure.u64(repayAmountRaw),
+        tx.object(policyCapId),
+        tx.object(CLOCK_ID),
+      ],
+    });
+  }
+
+  // (c) Borrow from margin for this cycle's Predict bet
+  const borrowed = tx.moveCall({
+    target: `${SONARK_PKG()}::portfolio::take_for_margin_borrow`,
+    typeArguments: [DUSDC],
+    arguments: [
+      tx.object(portfolioId),
+      tx.object(mockMarginId),
+      tx.pure.u64(borrowAmountRaw),
+      tx.object(policyCapId),
+      tx.object(CLOCK_ID),
+    ],
+  });
+
+  // (f) Mint range position using borrowed DUSDC
+  const change = tx.moveCall({
+    target: `${PREDICT_PKG()}::predict::mint_range`,
+    typeArguments: [DUSDC],
+    arguments: [
+      tx.object(env.PREDICT_OBJECT),
+      tx.object(managerId),
+      tx.object(oracleId),
+      tx.pure.u64(lowerStrikeRaw),
+      tx.pure.u64(upperStrikeRaw),
+      borrowed,
+      tx.object(CLOCK_ID),
+    ],
+  });
+
+  // (g) Store unused premium change back in portfolio
+  tx.moveCall({
+    target: `${SONARK_PKG()}::portfolio::store_quote`,
+    typeArguments: [DUSDC],
+    arguments: [tx.object(portfolioId), change],
+  });
+
+  const result = await withRetry(
+    () => client.core.signAndExecuteTransaction({
+      transaction: tx,
+      signer: keypair,
+      include: { effects: true },
+    }),
+    `executeMarginLoop(${portfolioId.slice(0, 8)}...)`,
+  );
+
+  if (result.$kind === 'FailedTransaction') {
+    throw new Error(`margin_loop cycle TX failed: ${JSON.stringify(result.FailedTransaction?.status)}`);
+  }
+  const tx_digest = result.Transaction!.digest;
+  await client.core.waitForTransaction({ digest: tx_digest });
+
+  const marketKey = deriveRangeKey(oracleId, expiryMs, lowerStrikeRaw, upperStrikeRaw);
+
+  log.info(
+    { portfolioId, tx_digest, borrowAmountRaw, marketKey, EXPLORER_URL: `${EXPLORER_URL}/${tx_digest}` },
+    'MARGIN_LOOP cycle complete',
+  );
+
+  return {
+    tx_digest,
+    nav_pushed: navPerShare,
+    borrow_raw: borrowAmountRaw,
     market_key: marketKey,
     oracle_id: oracleId,
   };

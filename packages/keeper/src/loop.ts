@@ -38,6 +38,7 @@ import {
   sizeRangeRoll,
   sizeVolTargetedRange,
   sizeVolArb,
+  binaryCallDeltaNorm,
   sviW,
 } from '@sonarkk/core';
 
@@ -52,7 +53,10 @@ import {
   executeRangeCycle,
   executeBinaryCycle,
   executePrincipalProtectedCycle,
+  executeMarginLoopCycle,
+  enableMarginLoopOnchain,
   pushNavOnly,
+  type StrikeSelection,
 } from './chain/execute.js';
 import { executeSpotHedge } from './spot/hedge.js';
 import { computeHedgeBudget } from './math/hedge-budget.js';
@@ -63,6 +67,7 @@ import { log } from './logger.js';
 import { env, CLOCK_ID, EXPLORER_URL } from './env.js';
 import { getPrismaClient } from '@sonarkk/core';
 import { STRATEGY_TYPE_MAP } from './loop-types.js';
+import { runDailyWalrusSnapshot, shouldRunDailySnapshot } from './jobs/walrus-snapshot.js';
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -158,6 +163,17 @@ interface PortfolioInput {
     strategy: string;
     hedgeMultiplier: number;
     managerId: string | null;
+    // Phase 7 config fields
+    utilTarget: number;
+    volTargetBps: number | null;
+    minAtmVolOverride: number | null;
+    strikeSelection: string;
+    liquidityReservePct: number;
+    drawdownPauseThresholdPct: number | null;
+    stopLossFloorRaw: bigint | null;
+    peakNavPerShareRaw: bigint | null;
+    isPaused: boolean;
+    pauseReason: string | null;
   };
   oracle_id: string;
   expiry_ms: number;
@@ -184,6 +200,18 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
       'idempotency: cycle already recorded, skipping');
     return;
   }
+
+  // ── (b1) PAUSED CHECK (drawdown pause set by a previous cycle) ───────────
+  if (portfolio.isPaused) {
+    log.info({ portfolioId, pauseReason: portfolio.pauseReason ?? 'unknown' },
+      'portfolio is paused — settlement only, no new deployments');
+    // Still run settlement for open positions; just skip the execute step.
+    // Recorded as skipped with the pause reason.
+  }
+
+  // Local pause state — may be updated mid-cycle by the drawdown check (f3).
+  let isPaused = portfolio.isPaused;
+  let activePauseReason = portfolio.pauseReason;
 
   // ── (b) POLICY CHECK ──────────────────────────────────────────────────────
   const policyCheck = await checkPolicyCap(client, policyCapId, portfolioId);
@@ -220,16 +248,19 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
   // Falls back to on-chain read if DB doesn't have it yet.
   const managerId = portfolio.managerId ?? await readManagerId(client, portfolioId);
   let settleTxDigest: string | null = null;
+  // Hoisted so MARGIN_LOOP execute can reference prior positions after settlement.
+  type OpenPos = { id: string; positionType: string; marketKey: string; quantityRaw: bigint; notionalRaw: bigint; expiryMs: bigint };
+  let priorRangePositions: OpenPos[] = [];
 
   if (managerId) {
     try {
       // Read open positions from DB for this portfolio.
-      type OpenPos = { id: string; positionType: string; marketKey: string; quantityRaw: bigint };
       const openPositions: OpenPos[] = await prisma.openPosition.findMany({
         where: { portfolioId: portfolio.id, settledAt: null, expiryMs: { lte: expiryBigInt } },
       });
       const binaryPositions = openPositions.filter((p: OpenPos) => p.positionType === 'binary');
       const rangePositions  = openPositions.filter((p: OpenPos) => p.positionType === 'range');
+      priorRangePositions = rangePositions;
 
       if (binaryPositions.length > 0) {
         const settleResult = await settleBinaryPositions(
@@ -290,6 +321,7 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
     activeOracleState.t_years,
     clampedUtil,
     strategyId,
+    portfolio.minAtmVolOverride,
   );
 
   // ── (f) COMPUTE NAV ───────────────────────────────────────────────────────
@@ -332,26 +364,84 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
     total_nav: navComponents.total_nav_raw.toString(),
   }, 'NAV computed');
 
-  if (guardResult.skip) {
-    log.info({ portfolioId, reason: guardResult.reason, atmVol: guardResult.atm_vol },
-      'entry guard: skip this expiry');
+  // ── (f2) STOP-LOSS CHECK ──────────────────────────────────────────────────
+  if (portfolio.stopLossFloorRaw != null && navComponents.total_nav_raw <= portfolio.stopLossFloorRaw) {
+    log.warn({
+      portfolioId,
+      totalNavRaw: navComponents.total_nav_raw.toString(),
+      stopLossFloorRaw: portfolio.stopLossFloorRaw.toString(),
+    }, 'stop-loss triggered — deactivating portfolio permanently');
+    await prisma.portfolio.update({
+      where: { id: portfolio.id },
+      data: {
+        isActive: false,
+        pauseReason: `stop_loss: NAV ${navComponents.total_nav_raw} <= floor ${portfolio.stopLossFloorRaw}`,
+      },
+    });
+    notifyOnAction({ kind: 'error', portfolioId: portfolio.id, oracleId: oracle_id,
+      expiryMs: expiryBigInt, detail: 'stop_loss_triggered — portfolio deactivated permanently' });
+    await recordCycle(portfolio.id, oracle_id, expiryBigInt, 'skipped', 'stop_loss_triggered', {
+      settleTxDigest, navPerShareBefore: chainState.nav_per_share,
+      navPerShareAfter: navComponents.nav_per_share, atmVol: guardResult.atm_vol,
+      atmSpread: guardResult.atm_spread, vaultValueRaw: vault_value_raw,
+      plpTotalSupplyRaw: plp_total_supply_raw, quoteBalanceRaw: navComponents.quote_balance_raw,
+      lpBalanceRaw: navComponents.lp_balance_raw, totalNavRaw: navComponents.total_nav_raw,
+    });
+    return;
+  }
+
+  // ── (f3) DRAWDOWN TRACKING ────────────────────────────────────────────────
+  {
+    const currentNavPerShare = navComponents.nav_per_share;
+    const peakNavPerShare = portfolio.peakNavPerShareRaw ?? currentNavPerShare;
+
+    if (currentNavPerShare > peakNavPerShare) {
+      await prisma.portfolio.update({
+        where: { id: portfolio.id },
+        data: { peakNavPerShareRaw: currentNavPerShare },
+      });
+    } else if (
+      portfolio.drawdownPauseThresholdPct != null &&
+      !isPaused &&
+      peakNavPerShare > 0n
+    ) {
+      const drawdownFrac = 1 - Number(currentNavPerShare) / Number(peakNavPerShare);
+      if (drawdownFrac >= portfolio.drawdownPauseThresholdPct) {
+        const reason = `drawdown_pause: ${(drawdownFrac * 100).toFixed(2)}% from peak`;
+        log.warn({ portfolioId, drawdownFrac, threshold: portfolio.drawdownPauseThresholdPct }, reason);
+        await prisma.portfolio.update({
+          where: { id: portfolio.id },
+          data: { isPaused: true, pauseReason: reason },
+        });
+        isPaused = true;
+        activePauseReason = reason;
+      }
+    }
+  }
+
+  if (guardResult.skip || isPaused) {
+    const skipReason = isPaused
+      ? (activePauseReason ?? 'portfolio_paused')
+      : (guardResult.reason ?? null);
+    log.info({ portfolioId, reason: skipReason, atmVol: guardResult.atm_vol },
+      isPaused ? 'portfolio paused — settlement only, no deploy' : 'entry guard: skip this expiry');
     notifyOnAction({ kind: 'skip', portfolioId: portfolio.id, oracleId: oracle_id,
-      expiryMs: expiryBigInt, ...(guardResult.reason !== undefined ? { detail: guardResult.reason } : {}) });
+      expiryMs: expiryBigInt, ...(skipReason ? { detail: skipReason } : {}) });
     try {
       const navTx = await pushNavOnly(client, keypair, portfolioId, policyCapId, navComponents.nav_per_share);
       notifyOnAction({ kind: 'nav_update', portfolioId: portfolio.id, oracleId: oracle_id,
         expiryMs: expiryBigInt, txDigest: navTx });
-      await recordCycle(portfolio.id, oracle_id, expiryBigInt, 'skipped', guardResult.reason ?? null, {
+      await recordCycle(portfolio.id, oracle_id, expiryBigInt, 'skipped', skipReason, {
         settleTxDigest, navPerShareBefore: chainState.nav_per_share,
         navPerShareAfter: navComponents.nav_per_share, atmVol: guardResult.atm_vol,
-        atmSpread: guardResult.atm_spread, entryGuardSkipped: true,
+        atmSpread: guardResult.atm_spread, entryGuardSkipped: !isPaused,
         vaultValueRaw: vault_value_raw, plpTotalSupplyRaw: plp_total_supply_raw,
         quoteBalanceRaw: navComponents.quote_balance_raw, lpBalanceRaw: navComponents.lp_balance_raw,
         bettorMtmRaw: bettorMtm, totalNavRaw: navComponents.total_nav_raw,
       });
     } catch (err) {
       log.warn({ portfolioId, err }, 'nav push on skip failed');
-      await recordCycle(portfolio.id, oracle_id, expiryBigInt, 'skipped', guardResult.reason ?? null);
+      await recordCycle(portfolio.id, oracle_id, expiryBigInt, 'skipped', skipReason);
     }
     return;
   }
@@ -376,7 +466,8 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
   try {
     if (portfolio.strategy === 'PLP_SUPPLIER') {
       // ① PLP Supplier
-      const sizing = sizePlpSupplier(navComponents.available_balance_raw, policyBudgetRaw);
+      const sizing = sizePlpSupplier(navComponents.available_balance_raw, policyBudgetRaw,
+        portfolio.utilTarget, portfolio.liquidityReservePct);
       if (sizing.skip_reason) {
         await skipWithRecord(portfolio.id, oracle_id, expiryBigInt, sizing.skip_reason,
           { settleTxDigest, navComponents, vaultState, chainState, bettorMtm });
@@ -391,8 +482,10 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
     } else if (portfolio.strategy === 'HEDGED_PLP' || portfolio.strategy === 'SMART_VAULT') {
       // ② Hedged-PLP  ③ Smart Vault (supply leg + hedge)
       const sizing = portfolio.strategy === 'HEDGED_PLP'
-        ? sizeHedgedPlp(navComponents.available_balance_raw, policyBudgetRaw)
-        : sizeSmartVault(navComponents.available_balance_raw, policyBudgetRaw).hedged_plp;
+        ? sizeHedgedPlp(navComponents.available_balance_raw, policyBudgetRaw,
+            portfolio.utilTarget, portfolio.liquidityReservePct)
+        : sizeSmartVault(navComponents.available_balance_raw, policyBudgetRaw,
+            0.6, portfolio.utilTarget, portfolio.liquidityReservePct).hedged_plp;
       if (sizing.skip_reason) {
         await skipWithRecord(portfolio.id, oracle_id, expiryBigInt, sizing.skip_reason,
           { settleTxDigest, navComponents, vaultState, chainState, bettorMtm });
@@ -532,9 +625,12 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
       }
 
       const sizing = portfolio.strategy === 'RANGE_ROLL'
-        ? sizeRangeRoll(navComponents.available_balance_raw, policyBudgetRaw)
+        ? sizeRangeRoll(navComponents.available_balance_raw, policyBudgetRaw,
+            portfolio.utilTarget, portfolio.liquidityReservePct)
         : sizeVolTargetedRange(navComponents.available_balance_raw, policyBudgetRaw,
-            guardResult.atm_vol);
+            guardResult.atm_vol, portfolio.utilTarget,
+            portfolio.volTargetBps != null ? portfolio.volTargetBps / 10000 : undefined,
+            portfolio.liquidityReservePct);
       if (sizing.skip_reason) {
         await skipWithRecord(portfolio.id, oracle_id, expiryBigInt, sizing.skip_reason,
           { settleTxDigest, navComponents, vaultState, chainState, bettorMtm });
@@ -545,6 +641,7 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
         client, keypair, portfolioId, policyCapId, managerId, oracle_id,
         BigInt(activeOracleState.expiry_ms), activeOracleState.forward_raw,
         navComponents.nav_per_share, sizing,
+        portfolio.strikeSelection as StrikeSelection,
       );
       supplyTxDigest = rangeResult.tx_digest;
       newPositionKey = rangeResult.market_key;
@@ -576,7 +673,7 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
       }
 
       const sizing = sizeVolArb(navComponents.available_balance_raw, policyBudgetRaw,
-        Math.min(1, signal.edge_pct / 20));  // full size at 20%+ edge
+        Math.min(1, signal.edge_pct / 20), portfolio.liquidityReservePct);
       if (sizing.skip_reason) {
         await skipWithRecord(portfolio.id, oracle_id, expiryBigInt, sizing.skip_reason,
           { settleTxDigest, navComponents, vaultState, chainState, bettorMtm });
@@ -588,6 +685,7 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
         client, keypair, portfolioId, policyCapId, managerId, oracle_id,
         BigInt(activeOracleState.expiry_ms), activeOracleState.forward_raw,
         navComponents.nav_per_share, sizing, true,
+        portfolio.strikeSelection as StrikeSelection,
       );
       supplyTxDigest = binaryResult.tx_digest;
       newPositionKey = binaryResult.market_key;
@@ -596,6 +694,122 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
       notifyOnAction({ kind: 'supply', portfolioId: portfolio.id, oracleId: oracle_id,
         expiryMs: expiryBigInt, txDigest: supplyTxDigest,
         detail: `mint ATM call, edge ${signal.edge_pct.toFixed(1)}%` });
+
+      // Delta-hedge the binary call on DeepBook Spot (per CLAUDE.md §2).
+      // Long ATM binary call has positive delta: φ(d₂)/√w × notional/spot.
+      // We offset by shorting BTC spot.
+      // Expressed as house_net_delta: positive bettor delta → pass as-is →
+      // computeHedgeOrder sees positive → direction='short' → sell BTC to hedge.
+      const volArbBinaryDelta = binaryCallDeltaNorm(activeOracleState.svi, 0 /* ATM */)
+        * (Number(sizing.size_raw) / 1e6)  // DUSDC notional
+        / activeOracleState.spot;           // → DBTC delta
+      const volArbHedgeOrder = computeHedgeOrder({
+        house_net_delta: volArbBinaryDelta,  // positive → direction='short' (sell BTC)
+        spot_price_usd: activeOracleState.spot,
+        t_years: activeOracleState.t_years,
+        budget_remaining_dusdc: Number(policyBudgetRaw) / 1e6,
+      });
+      idealHedgeNotional = volArbBinaryDelta * activeOracleState.spot;
+      hedgeBudgetDusdc = Number(policyBudgetRaw) / 1e6;
+      deltaSource = 'vol_arb_binary_delta';
+
+      if (!volArbHedgeOrder.skipped && volArbHedgeOrder.direction !== 'none' && env.DEEPBOOK_BALANCE_MANAGER) {
+        try {
+          const volArbHedgeResult = await executeSpotHedge(
+            client, keypair, volArbHedgeOrder, idealHedgeNotional);
+          hedgeTxDigest = volArbHedgeResult.tx_digest;
+          hedgeDirection = volArbHedgeResult.order_direction;
+          hedgeSizeDbtc = volArbHedgeResult.order_size_dbtc;
+          hedgeNotionalDusdc = volArbHedgeResult.notional_dbusdc;
+          coverageRatioPct = volArbHedgeResult.coverage_ratio_pct;
+          isPartialHedge = volArbHedgeResult.is_partial;
+          notifyOnAction({ kind: 'hedge', portfolioId: portfolio.id, oracleId: oracle_id,
+            expiryMs: expiryBigInt, txDigest: hedgeTxDigest,
+            detail: `vol-arb spot hedge: ${hedgeDirection} ${hedgeSizeDbtc?.toFixed(8)} DBTC, coverage ${coverageRatioPct?.toFixed(1)}%`,
+            coverageRatioPct: coverageRatioPct ?? undefined });
+        } catch (err) {
+          log.warn({ portfolioId, err }, 'vol-arb spot hedge failed — binary position already open');
+          hedgeDirection = volArbHedgeOrder.direction;
+          coverageRatioPct = 0;
+        }
+      } else if (volArbHedgeOrder.skipped) {
+        log.info({ portfolioId, reason: volArbHedgeOrder.skip_reason }, 'vol-arb hedge skipped (below minimum)');
+        coverageRatioPct = 0;
+      } else if (!env.DEEPBOOK_BALANCE_MANAGER) {
+        log.info({ portfolioId }, 'DEEPBOOK_BALANCE_MANAGER not set — vol-arb hedge skipped');
+        coverageRatioPct = 0;
+      }
+
+    } else if (portfolio.strategy === 'MARGIN_LOOP') {
+      // ⑧ Margin Loop — three-protocol composability (MockMargin + MockLending + Predict)
+      const mockMarginId = env.MOCK_MARGIN_ID;
+      if (!mockMarginId) {
+        log.warn({ portfolioId }, 'MOCK_MARGIN_ID not set — skipping MARGIN_LOOP');
+        await skipWithRecord(portfolio.id, oracle_id, expiryBigInt, 'mock_margin_not_configured',
+          { settleTxDigest, navComponents, vaultState, chainState, bettorMtm });
+        return;
+      }
+      if (!managerId) {
+        log.warn({ portfolioId }, 'no managerId for MARGIN_LOOP — skipping');
+        await skipWithRecord(portfolio.id, oracle_id, expiryBigInt, 'no_manager_id',
+          { settleTxDigest, navComponents, vaultState, chainState, bettorMtm });
+        return;
+      }
+
+      // First cycle: if no prior range positions exist and managerId is set, enable margin loop.
+      // The enableMarginLoopOnchain call is idempotent — the Move contract asserts !is_some().
+      // We detect first-cycle by: no prior settled range positions AND no current open positions.
+      const allPriorRange = await prisma.openPosition.count({
+        where: { portfolioId: portfolio.id, positionType: 'range' },
+      });
+      const isFirstCycle = allPriorRange === 0;
+
+      if (isFirstCycle) {
+        // First cycle: lock 50% of available balance as collateral.
+        const collateralRaw = navComponents.available_balance_raw / 2n;
+        if (collateralRaw === 0n) {
+          await skipWithRecord(portfolio.id, oracle_id, expiryBigInt, 'insufficient_balance',
+            { settleTxDigest, navComponents, vaultState, chainState, bettorMtm });
+          return;
+        }
+        log.info({ portfolioId, collateralRaw }, 'enabling margin loop (first cycle)');
+        await enableMarginLoopOnchain(client, keypair, portfolioId, policyCapId, mockMarginId, collateralRaw);
+      }
+
+      // Borrow capacity = LTV × collateral. Use utilTarget fraction of available balance.
+      const borrowSizing = sizePlpSupplier(
+        navComponents.available_balance_raw, policyBudgetRaw,
+        portfolio.utilTarget, portfolio.liquidityReservePct,
+      );
+      const borrowAmountRaw = borrowSizing.size_raw;
+
+      if (borrowAmountRaw === 0n) {
+        await skipWithRecord(portfolio.id, oracle_id, expiryBigInt, borrowSizing.skip_reason ?? 'zero_borrow_amount',
+          { settleTxDigest, navComponents, vaultState, chainState, bettorMtm });
+        return;
+      }
+
+      // After settlement (already ran above), repay outstanding borrow from portfolio balance.
+      // priorRangePositions = range positions settled this cycle (payout now in quote_balance).
+      const priorRangePos = priorRangePositions[0] ?? null;
+      // Repay: prior notionalRaw is a safe floor (payout ≥ 0; if payout < owed, repay what we have).
+      const repayAmountRaw = priorRangePos ? priorRangePos.notionalRaw : 0n;
+
+      const marginResult = await executeMarginLoopCycle(
+        client, keypair, portfolioId, policyCapId, managerId, mockMarginId,
+        oracle_id, BigInt(activeOracleState.expiry_ms), activeOracleState.forward_raw,
+        navComponents.nav_per_share, borrowAmountRaw,
+        null, null, null, null,  // settlement already done above; PTB only borrows + deploys
+        repayAmountRaw,
+        portfolio.strikeSelection as StrikeSelection,
+      );
+      supplyTxDigest = marginResult.tx_digest;
+      newPositionKey = marginResult.market_key;
+      newPositionType = 'range';
+      newNotionalRaw = marginResult.borrow_raw;
+      notifyOnAction({ kind: 'supply', portfolioId: portfolio.id, oracleId: oracle_id,
+        expiryMs: expiryBigInt, txDigest: supplyTxDigest,
+        detail: `margin_loop: borrow ${marginResult.borrow_raw} raw DUSDC → mint_range` });
     }
 
   } catch (err) {
@@ -846,6 +1060,13 @@ export async function runPollingLoop(
           client,
           keypair,
         });
+      }
+
+      // Daily Walrus snapshot — runs once per calendar day.
+      if (shouldRunDailySnapshot()) {
+        runDailyWalrusSnapshot(client, keypair).catch(err =>
+          log.error({ err }, 'daily walrus snapshot failed'),
+        );
       }
     } catch (err) {
       log.error({ err }, 'polling loop error');
