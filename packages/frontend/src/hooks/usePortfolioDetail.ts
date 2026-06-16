@@ -1,0 +1,1 @@
+export { usePortfolioDetail } from './usePortfolios'

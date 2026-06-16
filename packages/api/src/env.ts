@@ -8,6 +8,8 @@ const pkgDir = fileURLToPath(new URL('..', import.meta.url));
 config({ path: resolve(pkgDir, '../../.env') });
 
 const schema = z.object({
+  // Optional: keeper address derivation for /chain-config endpoint.
+  KEEPER_PRIVATE_KEY:  z.string().min(1).optional(),
   // Optional: AI copilot routes are disabled when absent rather than crashing the server.
   GEMINI_API_KEY:      z.string().min(1).optional(),
   GEMINI_MODEL:        z.string().default('gemini-2.0-flash'),
@@ -21,6 +23,7 @@ const schema = z.object({
   PREDICT_PACKAGE:     z.string().min(1),
   PREDICT_OBJECT:      z.string().min(1),
   DUSDC_TYPE:          z.string().min(1),
+  SONARK_PACKAGE:      z.string().min(1),
 });
 
 export const env = schema.parse(process.env);

@@ -17,6 +17,7 @@
 
 import express from 'express';
 import cors from 'cors';
+import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { env } from './env.js';
 import { chatRouter }        from './routes/chat.js';
 import { contextRouter }     from './routes/context.js';
@@ -52,6 +53,33 @@ try {
 } catch {
   console.warn('[api] Module C routes not available yet (./routes/backtest.ts not found)');
 }
+
+// ── Chain config — static constants the frontend needs to build PTBs ──────────
+// Exposes keeper address (derived at startup) + package IDs from env.
+let _keeperAddress: string | null = null;
+if (env.KEEPER_PRIVATE_KEY) {
+  try {
+    const kp = Ed25519Keypair.fromSecretKey(env.KEEPER_PRIVATE_KEY);
+    _keeperAddress = kp.getPublicKey().toSuiAddress();
+  } catch {
+    try {
+      const bytes = Buffer.from(env.KEEPER_PRIVATE_KEY, 'base64');
+      _keeperAddress = Ed25519Keypair.fromSecretKey(bytes.slice(1)).getPublicKey().toSuiAddress();
+    } catch { /* no keeper key */ }
+  }
+}
+
+app.get('/chain-config', (_req, res) => {
+  res.json({
+    keeperAddress:  _keeperAddress,
+    sonarkPackage:  env.SONARK_PACKAGE,
+    predictPackage: env.PREDICT_PACKAGE,
+    predictObject:  env.PREDICT_OBJECT,
+    dusdcType:      env.DUSDC_TYPE,
+    clockId:        '0x0000000000000000000000000000000000000000000000000000000000000006',
+    network:        env.SUI_NETWORK,
+  });
+});
 
 // ── Health ─────────────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {

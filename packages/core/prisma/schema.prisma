@@ -117,9 +117,11 @@ model CopyRelation {
 model Portfolio {
   id               String   @id @default(cuid())
   objectId         String   @unique   // Sui object ID of SonarkPortfolio<DUSDC>
+  name             String?            // user-chosen display name (set at deploy, falls back to strategy name)
   ownerAddress     String
   policyCapId      String             // PolicyCap object ID (keeper reads to check validity)
   strategy         String   // StrategyType enum value
+  totalDepositedRaw BigInt  @default(0)  // initial DUSDC deposited (raw, 6 dec)
   isActive         Boolean  @default(true)
   // For Hedged-PLP: scales the hedge notional relative to active PLP position.
   // 1.0 = full hedge of active notional. Capped by 50% of availableBalance.
