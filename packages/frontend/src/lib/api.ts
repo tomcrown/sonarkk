@@ -282,7 +282,25 @@ export interface PortfolioListItem {
   cycleCount: number
   vaultConfigId: string | null
   createdAt: string
+  lastKeeperRun: string | null
+  totalReturnPct: number | null
 }
+
+export interface ActivityItem {
+  id: string
+  portfolioId: string
+  portfolioName: string
+  strategyType: number
+  action: string
+  cyclePnlPct: number | null
+  atmVol: number | null
+  txDigest: string | null
+  status: string
+  createdAt: string
+}
+
+export interface ChartPoint { date: string; value: number }
+export interface ChartResponse { points: ChartPoint[] }
 
 export interface MarketContext {
   activeOracleCount: number
@@ -455,6 +473,16 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+
+    activity: (walletAddress: string, limit = 10) =>
+      apiFetch<ActivityItem[]>(
+        `/portfolios/activity?wallet=${encodeURIComponent(walletAddress)}&limit=${limit}`
+      ),
+
+    chart: (walletAddress: string) =>
+      apiFetch<ChartResponse>(
+        `/portfolios/chart?wallet=${encodeURIComponent(walletAddress)}`
+      ),
   },
 
   chainConfig: () => apiFetch<ChainConfig>('/chain-config'),

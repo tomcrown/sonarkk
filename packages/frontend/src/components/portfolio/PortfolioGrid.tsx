@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { type PortfolioListItem } from '@/lib/api'
-import { formatDusdc, formatNav, formatDate } from '@/lib/format'
+import { formatDusdc, formatPct, timeAgo } from '@/lib/format'
 import { PortfolioCard } from './PortfolioCard'
 import { StrategyBadge } from '@/components/common/StrategyBadge'
 import { Badge } from '@/components/ui/badge'
@@ -12,11 +12,19 @@ export function BotGroupCard({ portfolios }: { portfolios: PortfolioListItem[] }
   const navigate = useNavigate()
   const first = portfolios[0]!
   const name = first.name.replace(/ #\d+$/, '')
-  const combinedTvlRaw = String(
+  const combinedDepositRaw = String(
     portfolios.reduce((sum, p) => sum + BigInt(p.totalDepositedRaw ?? '0'), 0n)
   )
-  const totalCycles = portfolios.reduce((sum, p) => sum + p.cycleCount, 0)
   const isPaused = portfolios.every((p) => p.isPaused)
+  const latestRun = portfolios
+    .map((p) => p.lastKeeperRun)
+    .filter(Boolean)
+    .sort()
+    .at(-1) ?? null
+  const avgReturnPct = portfolios.some((p) => p.totalReturnPct != null)
+    ? portfolios.reduce((sum, p) => sum + (p.totalReturnPct ?? 0), 0) / portfolios.length
+    : null
+  const returnPositive = (avgReturnPct ?? 0) >= 0
 
   return (
     <motion.div
@@ -24,7 +32,7 @@ export function BotGroupCard({ portfolios }: { portfolios: PortfolioListItem[] }
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ y: -2 }}
       transition={{ duration: 0.2 }}
-      className="bg-[#1C1C21] border border-[rgba(255,255,255,0.06)] rounded-xl p-5 cursor-pointer hover:border-[rgba(169,168,236,0.25)] hover:bg-[#202026] transition-all"
+      className="bg-card border border-border rounded-xl p-5 cursor-pointer hover:border-accent/25 hover:bg-surface-2 transition-all"
       onClick={() => navigate(`/portfolios/${first.id}`)}
       role="article"
       aria-label={`Bot: ${name}`}
@@ -33,7 +41,7 @@ export function BotGroupCard({ portfolios }: { portfolios: PortfolioListItem[] }
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-white text-sm mb-2 truncate">{name}</h3>
+          <h3 className="font-semibold text-foreground text-sm mb-2 truncate">{name}</h3>
           <div className="flex flex-wrap gap-1">
             {portfolios.map((p) => (
               <StrategyBadge key={p.id} strategyType={p.strategyType} showName={false} />
@@ -47,22 +55,23 @@ export function BotGroupCard({ portfolios }: { portfolios: PortfolioListItem[] }
 
       <div className="grid grid-cols-3 gap-3">
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-[#58586A] mb-1">TVL</p>
-          <p className="text-sm font-semibold text-white">{formatDusdc(combinedTvlRaw, 0)}</p>
+          <p className="text-[10px] uppercase tracking-wider text-text-dim mb-1">Deposit</p>
+          <p className="text-sm font-semibold text-foreground">{formatDusdc(combinedDepositRaw, 0)}</p>
         </div>
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-[#58586A] mb-1">NAV/Share</p>
-          <p className="text-sm font-semibold text-white">{formatNav(first.navPerShareRaw)}</p>
+          <p className="text-[10px] uppercase tracking-wider text-text-dim mb-1">Return</p>
+          <p className={`text-sm font-semibold ${avgReturnPct == null ? 'text-text-dim' : returnPositive ? 'text-success' : 'text-danger'}`}>
+            {avgReturnPct == null ? '—' : formatPct(avgReturnPct)}
+          </p>
         </div>
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-[#58586A] mb-1">Cycles</p>
-          <p className="text-sm font-semibold text-white">{totalCycles}</p>
+          <p className="text-[10px] uppercase tracking-wider text-text-dim mb-1">Last run</p>
+          <p className="text-sm font-semibold text-foreground">{timeAgo(latestRun)}</p>
         </div>
       </div>
 
-      <div className="mt-3 flex items-center gap-2">
-        <span className="text-[10px] text-[#58586A]">{portfolios.length} strategies</span>
-        <span className="text-[10px] text-[#58586A]">· Deployed {formatDate(first.createdAt)}</span>
+      <div className="mt-3">
+        <span className="text-[10px] text-text-dim">{portfolios.length} strategies</span>
       </div>
     </motion.div>
   )

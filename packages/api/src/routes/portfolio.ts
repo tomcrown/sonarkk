@@ -95,17 +95,24 @@ function serializeListItem(p: {
 }) {
   const strategyType = STRATEGY_TO_NUM[p.strategy] ?? 0;
   const latestCycle = p.cycles[0];
+  const navPerShareRaw = b(latestCycle?.navPerShareAfter) ?? '1000000000';
+  const latestNavNum = Number(navPerShareRaw);
+  const totalReturnPct = latestCycle?.navPerShareAfter != null
+    ? ((latestNavNum - 1_000_000_000) / 1_000_000_000) * 100
+    : null;
   return {
     id: p.id,
     name: p.name ?? STRATEGY_DISPLAY[p.strategy] ?? p.strategy,
     strategyType,
     vaultObjectId: p.objectId,
-    navPerShareRaw: b(latestCycle?.navPerShareAfter) ?? '1000000000',
+    navPerShareRaw,
     totalDepositedRaw: b(p.totalDepositedRaw) ?? '0',
     isPaused: p.isPaused,
     cycleCount: p.cycles.length,
     vaultConfigId: p.vaultConfigId ?? null,
     createdAt: p.createdAt.toISOString(),
+    lastKeeperRun: latestCycle?.createdAt.toISOString() ?? null,
+    totalReturnPct,
   };
 }
 
@@ -141,6 +148,135 @@ function serializeCycle(c: {
     createdAt: c.createdAt.toISOString(),
   };
 }
+
+// ── GET /portfolios/activity ──────────────────────────────────────────────────
+// Returns the last N keeper cycles across all portfolios for a wallet.
+// Must be registered before /:id so Express doesn't treat "activity" as an ID.
+
+const ActivityQuerySchema = z.object({
+  wallet: z.string().min(1, 'wallet required'),
+  limit: z.coerce.number().int().min(1).max(50).default(10),
+});
+
+portfolioRouter.get('/activity', async (req, res) => {
+  const parsed = ActivityQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid query', details: parsed.error.flatten() });
+    return;
+  }
+
+  const { wallet, limit } = parsed.data;
+  try {
+    const prisma = getPrismaClient();
+    const cycles = await prisma.keeperCycle.findMany({
+      where: { portfolio: { ownerAddress: wallet } },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        status: true,
+        skipReason: true,
+        atmVol: true,
+        supplyTxDigest: true,
+        settleTxDigest: true,
+        navPerShareBefore: true,
+        navPerShareAfter: true,
+        createdAt: true,
+        portfolio: { select: { id: true, name: true, strategy: true } },
+      },
+    });
+
+    res.json(cycles.map((c) => {
+      const action = c.supplyTxDigest ? 'supply'
+        : c.status === 'skipped' ? 'skip'
+        : c.status === 'done' ? 'run'
+        : c.status;
+      const navBefore = c.navPerShareBefore ? Number(c.navPerShareBefore) : 1_000_000_000;
+      const navAfter  = c.navPerShareAfter  ? Number(c.navPerShareAfter)  : null;
+      const cyclePnlPct = navAfter != null
+        ? ((navAfter - navBefore) / navBefore) * 100
+        : null;
+      return {
+        id: c.id,
+        portfolioId:   c.portfolio.id,
+        portfolioName: c.portfolio.name ?? STRATEGY_DISPLAY[c.portfolio.strategy] ?? c.portfolio.strategy,
+        strategyType:  STRATEGY_TO_NUM[c.portfolio.strategy] ?? 0,
+        action,
+        cyclePnlPct,
+        atmVol:    c.atmVol,
+        txDigest:  c.supplyTxDigest ?? c.settleTxDigest ?? null,
+        status:    c.status,
+        createdAt: c.createdAt.toISOString(),
+      };
+    }));
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ── GET /portfolios/chart ─────────────────────────────────────────────────────
+// Returns aggregated total portfolio value over time for a wallet.
+// Each point = sum of (deposit_i × nav_i / 1e9) across all portfolios, in DUSDC.
+
+const ChartQuerySchema = z.object({
+  wallet: z.string().min(1, 'wallet required'),
+});
+
+portfolioRouter.get('/chart', async (req, res) => {
+  const parsed = ChartQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid query', details: parsed.error.flatten() });
+    return;
+  }
+
+  const { wallet } = parsed.data;
+  try {
+    const prisma = getPrismaClient();
+    const portfolios = await prisma.portfolio.findMany({
+      where: { ownerAddress: wallet },
+      select: {
+        totalDepositedRaw: true,
+        cycles: {
+          where: { navPerShareAfter: { not: null } },
+          orderBy: { createdAt: 'asc' },
+          select: { navPerShareAfter: true, createdAt: true },
+        },
+      },
+    });
+
+    if (portfolios.length === 0) { res.json({ points: [] }); return; }
+
+    // Collect all cycle events across portfolios, tagged by portfolio index
+    type Evt = { ts: number; idx: number; nav: bigint };
+    const events: Evt[] = [];
+    portfolios.forEach((p, idx) => {
+      for (const c of p.cycles) {
+        if (c.navPerShareAfter != null) {
+          events.push({ ts: c.createdAt.getTime(), idx, nav: c.navPerShareAfter });
+        }
+      }
+    });
+    events.sort((a, b) => a.ts - b.ts);
+
+    // Track running NAV per portfolio (start at 1e9 = deposit value)
+    const currentNav: bigint[] = portfolios.map(() => 1_000_000_000n);
+    const deposits = portfolios.map((p) => p.totalDepositedRaw);
+
+    const points: { date: string; value: number }[] = [];
+    for (const e of events) {
+      currentNav[e.idx] = e.nav;
+      let totalRaw = 0n;
+      for (let i = 0; i < portfolios.length; i++) {
+        totalRaw += deposits[i]! * currentNav[i]! / 1_000_000_000n;
+      }
+      points.push({ date: new Date(e.ts).toISOString(), value: Number(totalRaw) / 1_000_000 });
+    }
+
+    res.json({ points });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
 
 // ── GET /portfolios ────────────────────────────────────────────────────────────
 

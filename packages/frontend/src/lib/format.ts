@@ -81,3 +81,16 @@ export function truncateBlobId(blobId: string): string {
   if (!blobId || blobId.length < 12) return blobId
   return `${blobId.slice(0, 8)}...${blobId.slice(-6)}`
 }
+
+/** Human-readable relative time: "4m ago", "2h ago", "3d ago" */
+export function timeAgo(isoString: string | null | undefined): string {
+  if (!isoString) return 'Never'
+  const ms = Date.now() - new Date(isoString).getTime()
+  const mins = Math.floor(ms / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
