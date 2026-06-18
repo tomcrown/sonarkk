@@ -4,6 +4,7 @@
 
 /* ─── CSS Variables ─────────────────────────────────────────────────────────── */
 :root {
+  /* Legacy tokens — kept for existing components that use var(--bg-*) / var(--ink-*) */
   --bg-base:       #121213;
   --bg-surface:    #17171A;
   --bg-card:       #1C1C21;
@@ -31,6 +32,46 @@
   --status-red:    #F04438;
 
   --radius:        6px;
+
+  /* Lovable semantic tokens — used by new Tailwind classes */
+  --background:      #121213;
+  --foreground:      #FFFFFF;
+  --card:            #1C1C21;
+  --card-foreground: #FFFFFF;
+  --popover:         #1C1C21;
+  --popover-foreground: #FFFFFF;
+  --primary:         #A9A8EC;
+  --primary-foreground: #121213;
+  --secondary:       #202026;
+  --secondary-foreground: #FFFFFF;
+  --muted:           #202026;
+  --muted-foreground: #9191A4;
+  --destructive:     #F04438;
+  --destructive-foreground: #FFFFFF;
+  --border:          rgba(255,255,255,0.08);
+  --input:           rgba(255,255,255,0.10);
+  --ring:            #A9A8EC;
+  --success:         #3DD68C;
+  --warning:         #E8A627;
+  --danger:          #F04438;
+  --surface-2:       #1E1E24;
+  --text-dim:        #58586A;
+  --sidebar:         #100F12;
+  --sidebar-foreground:          #FFFFFF;
+  --sidebar-primary:             #A9A8EC;
+  --sidebar-primary-foreground:  #121213;
+  --sidebar-accent:              #1E1E24;
+  --sidebar-accent-foreground:   #FFFFFF;
+  --sidebar-border:              rgba(255,255,255,0.06);
+  --sidebar-ring:                #A9A8EC;
+  --gradient-glow:   radial-gradient(ellipse 80% 50% at 50% 40%, rgba(169,168,236,0.35), transparent 70%);
+  --gradient-accent: linear-gradient(135deg, #D4CDF9, #A9A8EC);
+  --shadow-glow:     0 0 80px -10px rgba(169,168,236,0.5);
+
+  /* Font display mapping */
+  --font-display: 'Space Grotesk', 'Inter', sans-serif;
+  --font-sans:    'Inter', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, monospace;
 }
 
 /* ─── Base ──────────────────────────────────────────────────────────────────── */
@@ -49,14 +90,13 @@ body {
   line-height: 1.6;
   color: var(--ink-primary);
   background-color: var(--bg-base);
-  /* Barely-visible atmospheric haze at the very top of the page */
   background-image:
     radial-gradient(ellipse 110% 30% at 50% -2%, rgba(169,168,236,0.08) 0%, transparent 68%);
   background-attachment: fixed;
   min-height: 100dvh;
 }
 
-/* Subtle noise grain — kills the "flat 2D" look */
+/* Subtle noise grain — kills flat 2D look */
 body::after {
   content: '';
   position: fixed;
@@ -72,6 +112,7 @@ body::after {
 
 h1, h2, h3, h4, h5, h6 {
   margin: 0;
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.25;
@@ -92,9 +133,29 @@ button { cursor: pointer; }
   border-radius: 4px;
 }
 
+/* ─── Bracket-card-full (4 corners via child spans) ─────────────────────────── */
+.bracket-card-full { position: relative; }
+
+.bracket-card-full::before,
+.bracket-card-full::after,
+.bracket-card-full > .bracket-bl,
+.bracket-card-full > .bracket-br {
+  content: "";
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-color: rgba(169,168,236,0.5);
+  border-style: solid;
+  border-width: 0;
+  pointer-events: none;
+}
+.bracket-card-full::before      { top: -1px;    left: -1px;  border-top-width: 1.5px; border-left-width: 1.5px; }
+.bracket-card-full::after       { top: -1px;    right: -1px; border-top-width: 1.5px; border-right-width: 1.5px; }
+.bracket-card-full > .bracket-bl { bottom: -1px; left: -1px;  border-bottom-width: 1.5px; border-left-width: 1.5px; }
+.bracket-card-full > .bracket-br { bottom: -1px; right: -1px; border-bottom-width: 1.5px; border-right-width: 1.5px; }
+
 /* ─── Component classes ─────────────────────────────────────────────────────── */
 
-/* Card — floating layer above base */
 .surface {
   background: var(--bg-card);
   background-image: linear-gradient(160deg, rgba(255,255,255,0.025) 0%, transparent 55%);
@@ -109,7 +170,7 @@ button { cursor: pointer; }
   border-radius: var(--radius);
 }
 
-/* Bracket card — Glow Finance corner accents */
+/* Bracket card (2-corner CSS-only variant) */
 .bracket-card {
   position: relative;
   background: var(--bg-card);
@@ -174,7 +235,6 @@ button { cursor: pointer; }
   -webkit-text-fill-color: transparent;
 }
 
-/* Page-level hero title — ClashX-scale */
 .page-title {
   font-size: clamp(36px, 4vw, 56px);
   font-weight: 800;
@@ -184,7 +244,6 @@ button { cursor: pointer; }
   color: var(--ink-primary);
 }
 
-/* Section card heading — bold, uppercase, readable */
 .card-heading {
   font-size: 16px;
   font-weight: 700;
@@ -194,7 +253,6 @@ button { cursor: pointer; }
   color: var(--ink-primary);
 }
 
-/* Hero stat number — massive, dominant */
 .hero-num {
   font-size: clamp(36px, 4vw, 52px);
   font-weight: 800;
@@ -285,3 +343,34 @@ button { cursor: pointer; }
 
 /* ─── Dapp-kit ──────────────────────────────────────────────────────────────── */
 [data-dapp-kit] { font-family: 'Inter', sans-serif !important; }
+
+/* ─── Utilities ─────────────────────────────────────────────────────────────── */
+@layer utilities {
+  .noise-grain {
+    position: relative;
+  }
+  .noise-grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.04;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  }
+
+  .hero-glow {
+    background: radial-gradient(ellipse 70% 55% at 50% 35%, rgba(169,168,236,0.45), transparent 65%);
+  }
+
+  .text-gradient-accent {
+    background: linear-gradient(135deg, rgba(255,255,255,0.95), #D4CDF9, #A9A8EC);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .animate-pulse-dot {
+    animation: pulse-subtle 2s ease-in-out infinite;
+  }
+}

@@ -292,16 +292,10 @@ export default function Explore() {
   })
 
   return (
-    <div className="space-y-8">
-
-      {/* ── Header ──────────────────────────────────────────────────── */}
-      <div>
-        <p className="section-label mb-3">Studio</p>
-        <h1 className="page-title">Strategy Studio</h1>
-        <p className="text-sm mt-3" style={{ color: 'var(--ink-secondary)' }}>
-          Build, test, and deploy automated strategies on DeepBook Predict.
-        </p>
-      </div>
+    <div className="px-10 py-12 max-w-[1600px]">
+      <div className="text-xs tracking-[0.2em] text-text-dim mb-3">DEPLOY</div>
+      <h1 className="text-6xl md:text-7xl font-display font-medium tracking-tight uppercase mb-3">Strategy Studio</h1>
+      <p className="text-muted-foreground mb-12">Build, test, and deploy automated strategies on DeepBook Predict.</p>
 
       {/* ── Filter pills ─────────────────────────────────────────────── */}
       <div className="flex items-center gap-2">

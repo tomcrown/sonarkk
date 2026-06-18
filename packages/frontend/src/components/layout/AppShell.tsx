@@ -4,14 +4,14 @@ import { Header } from './Header'
 
 export function AppShell() {
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg-base)' }}>
+    <div className="h-screen flex overflow-hidden bg-background text-foreground">
       <Sidebar />
-      <Header />
-      <main className="ml-[220px] pt-14 min-h-screen">
-        <div className="p-6 max-w-[1440px] mx-auto">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <Header />
+        <main className="flex-1 overflow-y-auto">
           <Outlet />
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   )
 }

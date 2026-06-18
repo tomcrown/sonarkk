@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { formatVol } from '@/lib/format'
 import { ConnectPrompt } from './ConnectPrompt'
 
-function HeroStatCard({
+function StatCard({
   label,
   value,
   sub,
@@ -27,17 +27,21 @@ function HeroStatCard({
   icon?: React.ElementType
 }) {
   return (
-    <div className="surface p-6 flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <p className="section-label" style={{ color: accent ?? 'var(--ink-muted)' }}>{label}</p>
-        {Icon && <Icon className="w-4 h-4" style={{ color: accent ?? 'var(--ink-muted)', opacity: 0.6 }} />}
+    <div className="bg-card border border-border rounded-lg p-6 hover:border-accent/30 transition-colors">
+      <div className="text-[10px] tracking-[0.15em] text-text-dim mb-4 flex items-center justify-between">
+        <span>{label}</span>
+        {Icon && <Icon className="w-3.5 h-3.5" style={{ color: accent ?? 'var(--text-dim)', opacity: 0.7 }} />}
       </div>
       {loading ? (
-        <Skeleton className="h-12 w-28" />
+        <Skeleton className="h-10 w-28" />
       ) : (
-        <p className="hero-num">{value}</p>
+        <div className="text-4xl md:text-5xl font-display font-medium tracking-tight" style={accent ? { color: accent } : {}}>
+          {value}
+        </div>
       )}
-      {sub && <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>{sub}</p>}
+      {sub && (
+        <div className="mt-3 text-xs font-mono text-muted-foreground">{sub}</div>
+      )}
     </div>
   )
 }
@@ -50,50 +54,47 @@ export default function Dashboard() {
   const { data: portfolios, isLoading: portfoliosLoading } = usePortfolios(address)
 
   if (!isConnected) {
-    return <ConnectPrompt title="Dashboard" description="Connect your wallet to see live bots, open cycles, and keeper status." />
+    return (
+      <div className="px-10 py-12 max-w-[1600px]">
+        <ConnectPrompt title="Dashboard" description="Connect your wallet to see live bots, open cycles, and keeper status." />
+      </div>
+    )
   }
 
-  const activeCount = portfolios?.filter((p) => !p.isPaused).length ?? 0
-  const totalCount  = portfolios?.length ?? 0
-  const pausedCount = portfolios?.filter((p) => p.isPaused).length ?? 0
+  const activeCount  = portfolios?.filter((p) => !p.isPaused).length ?? 0
+  const totalCount   = portfolios?.length ?? 0
+  const pausedCount  = portfolios?.filter((p) => p.isPaused).length ?? 0
 
   return (
-    <div className="space-y-10">
+    <div className="px-10 py-12 max-w-[1600px]">
+      <div className="text-xs tracking-[0.2em] text-text-dim mb-3">OVERVIEW</div>
+      <h1 className="text-6xl md:text-7xl font-display font-medium tracking-tight uppercase mb-12">Dashboard</h1>
 
-      {/* ── Page header ──────────────────────────────────────────────── */}
-      <div>
-        <p className="section-label mb-3">Overview</p>
-        <h1 className="page-title">Dashboard</h1>
-        <p className="text-sm mt-3" style={{ color: 'var(--ink-secondary)' }}>
-          See live strategies, open cycles, and keeper status.
-        </p>
-      </div>
-
-      {/* ── Hero stat row ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <HeroStatCard
-          label="Active Portfolios"
-          value={`${activeCount}/${totalCount}`}
+      {/* Stat row */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-16">
+        <StatCard
+          label="ACTIVE PORTFOLIOS"
+          value={portfoliosLoading ? '—' : `${activeCount}/${totalCount}`}
           sub="Strategies running"
           icon={Layers}
           loading={portfoliosLoading}
         />
-        <HeroStatCard
-          label="Open Cycles"
-          value={context?.market?.activeOracleCount ?? '—'}
+        <StatCard
+          label="OPEN CYCLES"
+          value={contextLoading ? '—' : (context?.market?.activeOracleCount ?? '—')}
           sub="Active oracle markets"
           icon={Activity}
           loading={contextLoading}
         />
-        <HeroStatCard
-          label="ATM Volatility"
-          value={context?.market?.latestAtmVol ? formatVol(context.market.latestAtmVol) : '—'}
+        <StatCard
+          label="ATM VOLATILITY"
+          value={contextLoading ? '—' : (context?.market?.latestAtmVol ? formatVol(context.market.latestAtmVol) : '—')}
           sub={context?.market?.volRegime ? `${context.market.volRegime} regime` : 'Fetching…'}
           icon={TrendingUp}
           loading={contextLoading}
         />
-        <HeroStatCard
-          label="Keeper Status"
+        <StatCard
+          label="KEEPER STATUS"
           value={
             <span className="flex items-center gap-3">
               <span className="dot-live" />
@@ -106,23 +107,23 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* ── Two-column radar / attention ──────────────────────────────── */}
-      <div className="grid lg:grid-cols-2 gap-4">
+      <div className="grid lg:grid-cols-3 gap-6 mb-16">
+        {/* Live cycle radar */}
         <motion.div
-          className="surface p-7"
+          className="lg:col-span-1 bg-card border border-border rounded-lg p-6"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
         >
-          <p className="section-label mb-2" style={{ color: 'var(--accent)' }}>Live Cycle Radar</p>
-          <h3 className="card-heading mb-5">What is actually running right now</h3>
+          <div className="text-[10px] tracking-[0.15em] text-text-dim mb-3">LIVE CYCLE RADAR</div>
+          <h2 className="text-xl font-display mb-5">What is running now</h2>
           {contextLoading ? (
             <div className="space-y-2">
               <Skeleton className="h-4 w-full" />
               <Skeleton className="h-4 w-3/4" />
             </div>
           ) : (
-            <p className="text-sm leading-relaxed" style={{ color: 'var(--ink-secondary)' }}>
+            <p className="text-sm leading-relaxed text-muted-foreground">
               {context?.market?.activeOracleCount
                 ? `${context.market.activeOracleCount} active oracle markets. ATM vol at ${context.market.latestAtmVol ? formatVol(context.market.latestAtmVol) : 'unknown'} — ${context.market.volRegime} regime.`
                 : 'No active oracle markets at this moment. The keeper will pick up the next expiry automatically.'}
@@ -130,33 +131,31 @@ export default function Dashboard() {
           )}
           <Link
             to="/analytics"
-            className="inline-flex items-center gap-1.5 text-xs mt-5 transition-colors"
-            style={{ color: 'var(--accent)' }}
+            className="inline-flex items-center gap-1.5 text-xs mt-5 text-accent-light hover:text-accent transition-colors"
           >
             Deeper analytics <ArrowRight className="w-3 h-3" />
           </Link>
         </motion.div>
 
+        {/* Market status */}
         <motion.div
-          className="surface p-7"
+          className="lg:col-span-2 bg-card border border-border rounded-lg p-6"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.06 }}
         >
-          <p className="section-label mb-2" style={{ color: pausedCount > 0 ? 'var(--status-red)' : 'var(--ink-muted)' }}>
-            Attention Queue
-          </p>
-          <h3 className="card-heading mb-5">Surface the problems first</h3>
+          <div className="text-[10px] tracking-[0.15em] text-text-dim mb-3">ATTENTION QUEUE</div>
+          <h2 className="text-xl font-display mb-5">Surface the problems first</h2>
           {portfoliosLoading ? (
             <Skeleton className="h-4 w-3/4" />
           ) : (
-            <div className="text-sm" style={{ color: 'var(--ink-secondary)' }}>
+            <div className="text-sm text-muted-foreground">
               {pausedCount > 0 ? (
                 <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'var(--status-yellow)' }} />
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-warning" />
                   <span>
                     {pausedCount} portfolio{pausedCount !== 1 ? 's' : ''} paused.{' '}
-                    <Link to="/portfolios" style={{ color: 'var(--accent)' }} className="hover:underline">
+                    <Link to="/portfolios" className="text-accent-light hover:text-accent">
                       View portfolios →
                     </Link>
                   </span>
@@ -166,15 +165,22 @@ export default function Dashboard() {
               )}
             </div>
           )}
+          <div className="mt-6 pt-6 border-t border-border">
+            <div className="text-xs text-muted-foreground mb-3">Bot engine</div>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
+              <span className="text-foreground">{activeCount} bots queued for next tick</span>
+            </div>
+          </div>
         </motion.div>
       </div>
 
-      {/* ── Portfolio board ───────────────────────────────────────────── */}
+      {/* Portfolio board */}
       <div>
         <div className="flex items-end justify-between mb-6">
           <div>
-            <p className="section-label mb-2">Portfolio Board</p>
-            <h2 className="card-heading">Every deployed strategy at a glance</h2>
+            <div className="text-[10px] tracking-[0.15em] text-text-dim mb-2">YOUR POSITIONS</div>
+            <h2 className="text-2xl font-display">Deployed strategies</h2>
           </div>
           <Button variant="outline" size="sm" asChild>
             <Link to="/explore">Deploy new →</Link>
@@ -184,7 +190,7 @@ export default function Dashboard() {
         {portfoliosLoading ? (
           <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="surface p-6 space-y-4">
+              <div key={i} className="bg-card border border-border rounded-lg p-6 space-y-4">
                 <Skeleton className="h-4 w-32" />
                 <Skeleton className="h-10 w-20" />
                 <div className="grid grid-cols-3 gap-3">

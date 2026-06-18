@@ -15,18 +15,30 @@ export default function Leaderboard() {
   const { data, isLoading, error } = useLeaderboard(50)
   const [copyTarget, setCopyTarget] = useState<LeaderboardEntry | null>(null)
 
-  const entries = data?.entries ?? []
-  const houseEntries = entries.filter((e) => HOUSE_STRATEGIES.has(e.strategyType))
+  const entries       = data?.entries ?? []
+  const houseEntries  = entries.filter((e) => HOUSE_STRATEGIES.has(e.strategyType))
   const bettorEntries = entries.filter((e) => BETTOR_STRATEGIES.has(e.strategyType))
 
+  const totalCopiers   = entries.reduce((s, e) => s + (e.copierCount ?? 0), 0)
+  const totalCycles    = entries.reduce((s, e) => s + (e.cycleCount ?? 0), 0)
+
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#58586A] mb-1">Discover</p>
-        <h1 className="text-2xl font-semibold text-white">Leaderboard</h1>
-        <p className="text-sm text-[#9191A4] mt-1">
-          Strategies ranked by real on-chain performance. Every number is a verifiable Sui transaction.
-        </p>
+    <div className="px-10 py-12 max-w-[1600px]">
+      <div className="text-xs tracking-[0.2em] text-text-dim mb-3">DISCOVER</div>
+      <h1 className="text-6xl md:text-7xl font-display font-medium tracking-tight uppercase mb-12">Leaderboard</h1>
+
+      {/* Summary stat cards */}
+      <div className="grid grid-cols-3 gap-4 mb-12">
+        {[
+          { l: 'STRATEGIES',  v: isLoading ? '—' : String(entries.length) },
+          { l: 'TOTAL COPIES', v: isLoading ? '—' : totalCopiers.toLocaleString() },
+          { l: 'TOTAL CYCLES', v: isLoading ? '—' : totalCycles.toLocaleString() },
+        ].map((s) => (
+          <div key={s.l} className="bg-card border border-border rounded-lg p-6">
+            <div className="text-[10px] tracking-[0.15em] text-text-dim mb-3">{s.l}</div>
+            <div className="text-5xl font-display">{s.v}</div>
+          </div>
+        ))}
       </div>
 
       {data?.caveat && <LeaderboardCaveat caveat={data.caveat} />}
@@ -38,7 +50,7 @@ export default function Leaderboard() {
           ))}
         </div>
       ) : error ? (
-        <div className="rounded-xl border border-[rgba(239,68,68,0.2)] bg-[rgba(239,68,68,0.06)] p-6 text-center text-sm text-[#F47C72]">
+        <div className="rounded-xl border border-danger/20 bg-danger/5 p-6 text-center text-sm text-danger">
           Failed to load leaderboard. Make sure the API server is running.
         </div>
       ) : entries.length === 0 ? (
@@ -51,32 +63,31 @@ export default function Leaderboard() {
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="bg-[#1C1C21] border border-[rgba(255,255,255,0.06)] rounded-xl overflow-hidden"
+          className="bg-card border border-border rounded-xl overflow-hidden"
         >
           <Tabs defaultValue="all">
-            <div className="border-b border-[rgba(255,255,255,0.06)] px-5 pt-5 pb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-white uppercase tracking-wider">Full Board</h2>
+            <div className="border-b border-border px-5 pt-5 pb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">Full Board</h2>
               <TabsList>
                 <TabsTrigger value="all">All</TabsTrigger>
                 <TabsTrigger value="house">House</TabsTrigger>
                 <TabsTrigger value="bettor">Bettor</TabsTrigger>
               </TabsList>
             </div>
-
             <div className="p-5">
               <TabsContent value="all">
                 <LeaderboardTable entries={entries} onCopy={setCopyTarget} />
               </TabsContent>
               <TabsContent value="house">
                 {houseEntries.length === 0 ? (
-                  <p className="text-sm text-[#58586A] py-4">No house strategies on the board yet.</p>
+                  <p className="text-sm text-text-dim py-4">No house strategies on the board yet.</p>
                 ) : (
                   <LeaderboardTable entries={houseEntries} onCopy={setCopyTarget} />
                 )}
               </TabsContent>
               <TabsContent value="bettor">
                 {bettorEntries.length === 0 ? (
-                  <p className="text-sm text-[#58586A] py-4">No bettor strategies on the board yet.</p>
+                  <p className="text-sm text-text-dim py-4">No bettor strategies on the board yet.</p>
                 ) : (
                   <LeaderboardTable entries={bettorEntries} onCopy={setCopyTarget} />
                 )}

@@ -6,6 +6,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // ── Existing design tokens (keep for backward compat) ────────────────
         bg: {
           base:     '#121213',
           surface:  '#17171A',
@@ -39,10 +40,56 @@ const config: Config = {
           red:    '#F04438',
           blue:   '#60A5FA',
         },
+        // ── Lovable semantic tokens ──────────────────────────────────────────
+        background: '#121213',
+        foreground: '#FFFFFF',
+        card: {
+          DEFAULT:    '#1C1C21',
+          foreground: '#FFFFFF',
+        },
+        popover: {
+          DEFAULT:    '#1C1C21',
+          foreground: '#FFFFFF',
+        },
+        primary: {
+          DEFAULT:    '#A9A8EC',
+          foreground: '#121213',
+        },
+        secondary: {
+          DEFAULT:    '#202026',
+          foreground: '#FFFFFF',
+        },
+        muted: {
+          DEFAULT:    '#202026',
+          foreground: '#9191A4',
+        },
+        destructive: {
+          DEFAULT:    '#F04438',
+          foreground: '#FFFFFF',
+        },
+        border:  'rgba(255,255,255,0.08)',
+        input:   'rgba(255,255,255,0.10)',
+        ring:    '#A9A8EC',
+        success: '#3DD68C',
+        warning: '#E8A627',
+        danger:  '#F04438',
+        'surface-2': '#1E1E24',
+        'text-dim':  '#58586A',
+        sidebar: {
+          DEFAULT:            '#100F12',
+          foreground:         '#FFFFFF',
+          primary:            '#A9A8EC',
+          'primary-foreground': '#121213',
+          accent:             '#1E1E24',
+          'accent-foreground': '#FFFFFF',
+          border:             'rgba(255,255,255,0.06)',
+          ring:               '#A9A8EC',
+        },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+        display: ['Space Grotesk', 'Inter', 'sans-serif'],
+        sans:    ['Inter', 'system-ui', 'sans-serif'],
+        mono:    ['JetBrains Mono', 'Fira Code', 'monospace'],
       },
       boxShadow: {
         'card':     '0 1px 2px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.055)',
@@ -51,6 +98,7 @@ const config: Config = {
         'accent':   '0 0 0 1px rgba(169,168,236,0.35)',
         'accent-glow': '0 0 20px rgba(169,168,236,0.15)',
         'popover':  '0 20px 60px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.08)',
+        'glow':     '0 0 80px -10px rgba(169,168,236,0.5)',
       },
       backgroundImage: {
         'page-atmosphere': 'radial-gradient(ellipse 100% 35% at 50% -5%, rgba(169,168,236,0.07) 0%, transparent 70%)',

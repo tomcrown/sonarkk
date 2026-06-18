@@ -16,58 +16,58 @@ export default function CopyTrading() {
   const [selected, setSelected] = useState<LeaderboardEntry | null>(null)
 
   const frontRunners = data?.entries.slice(0, 3) ?? []
-  const allEntries = data?.entries ?? []
+  const allEntries   = data?.entries ?? []
 
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#58586A] mb-1">Discover</p>
-        <h1 className="text-2xl font-semibold text-white">Copy Trading</h1>
-        <p className="text-sm text-[#9191A4] mt-1">
-          Browse verified strategies. Pay once to access the creator's config and deploy an identical portfolio.
-        </p>
-      </div>
+    <div className="px-10 py-12 max-w-[1600px]">
+      <div className="text-xs tracking-[0.2em] text-text-dim mb-3">MIRROR</div>
+      <h1 className="text-6xl md:text-7xl font-display font-medium tracking-tight uppercase mb-12">Copy Trading</h1>
 
       {data?.caveat && <LeaderboardCaveat caveat={data.caveat} />}
 
-      {/* Front Runners */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
+      {/* Front runners */}
+      <div className="mb-12">
+        <div className="flex items-center justify-between mb-6">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#A9A8EC] mb-1">Front Runners</p>
-            <h2 className="text-sm font-semibold text-white">Top strategies this season</h2>
+            <div className="text-[10px] tracking-[0.15em] text-accent mb-1">FRONT RUNNERS</div>
+            <h2 className="text-2xl font-display">Top strategies this season</h2>
           </div>
-          <Link to="/leaderboard" className="text-xs text-[#A9A8EC] hover:text-[#D4CDF9] flex items-center gap-1 transition-colors">
+          <Link to="/leaderboard" className="inline-flex items-center gap-1.5 text-xs text-accent-light hover:text-accent transition-colors">
             View top profile <ArrowRight className="w-3 h-3" />
           </Link>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-4">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
           {isLoading
-            ? [1, 2, 3].map((i) => <Skeleton key={i} className="h-36 rounded-xl" />)
+            ? [1, 2, 3].map((i) => <Skeleton key={i} className="h-44 rounded-xl" />)
             : frontRunners.map((entry, i) => (
                 <motion.div
                   key={entry.portfolioId}
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.08 }}
-                  className="bg-[#1C1C21] border border-[rgba(255,255,255,0.06)] rounded-xl p-5 hover:border-[rgba(169,168,236,0.25)] transition-all"
+                  className="bg-card border border-border rounded-lg p-6 hover:border-accent/40 transition-colors group"
                 >
-                  <div className="flex items-start justify-between mb-3">
-                    <span className="text-xs font-bold text-[#A9A8EC]">#{entry.rank}</span>
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <div className="font-display text-xl text-foreground uppercase truncate">{entry.portfolioName}</div>
+                      <div className="text-xs text-text-dim font-mono mt-1">{truncateAddress(entry.walletAddress)}</div>
+                    </div>
+                    <span className="text-xs font-mono text-text-dim">#{entry.rank}</span>
+                  </div>
+                  <div className="flex items-start justify-between mb-1">
                     <StrategyBadge strategyType={entry.strategyType} />
                   </div>
-                  <h3 className="font-semibold text-white text-sm uppercase mb-1 truncate">
-                    {entry.portfolioName}
-                  </h3>
-                  <p className="text-xs text-[#58586A] mb-3">{truncateAddress(entry.walletAddress)}</p>
-                  <div className="flex items-center justify-between">
-                    <span className={`text-sm font-bold ${(entry.totalReturnPct ?? 0) >= 0 ? 'text-[#3DD68C]' : 'text-[#F04438]'}`}>
+                  <div className="mt-4 flex items-center justify-between">
+                    <span className={`text-sm font-bold font-mono ${(entry.totalReturnPct ?? 0) >= 0 ? 'text-success' : 'text-danger'}`}>
                       {entry.totalReturnPct != null ? formatPct(entry.totalReturnPct) : '—'}
                     </span>
-                    <Button size="sm" variant="outline" onClick={() => setSelected(entry)}>
-                      <Copy className="w-3 h-3" /> Copy
-                    </Button>
+                    <button
+                      onClick={() => setSelected(entry)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-gradient-to-r from-accent-light to-accent text-background font-medium text-xs hover:opacity-90 transition-opacity"
+                    >
+                      <Copy className="w-3 h-3" /> Mirror
+                    </button>
                   </div>
                 </motion.div>
               ))}
@@ -77,44 +77,44 @@ export default function CopyTrading() {
       {/* Full board */}
       <div>
         <div className="mb-4">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#58586A] mb-1">Full Board</p>
-          <h2 className="text-sm font-semibold text-white">All strategies available to copy</h2>
+          <div className="text-[10px] tracking-[0.15em] text-text-dim mb-1">FULL BOARD</div>
+          <h2 className="text-2xl font-display">All strategies available to copy</h2>
         </div>
 
-        <div className="bg-[#1C1C21] border border-[rgba(255,255,255,0.06)] rounded-xl overflow-hidden">
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
           {isLoading ? (
             <div className="p-5 space-y-3">
               {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12" />)}
             </div>
           ) : (
-            <div className="divide-y divide-[rgba(255,255,255,0.04)]">
+            <div className="divide-y divide-border/50">
               {allEntries.map((entry, i) => (
                 <motion.div
                   key={entry.portfolioId}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: i * 0.02 }}
-                  className="flex items-center gap-4 px-5 py-3.5 hover:bg-[rgba(169,168,236,0.04)] transition-colors group"
+                  className="flex items-center gap-4 px-5 py-3.5 hover:bg-surface-2/40 transition-colors group"
                 >
-                  <span className="text-sm font-semibold text-[#58586A] w-8">#{entry.rank}</span>
+                  <span className="text-sm font-semibold text-text-dim w-8">#{entry.rank}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
-                      <p className="text-sm font-semibold text-white uppercase truncate">{entry.portfolioName}</p>
+                      <p className="text-sm font-semibold text-foreground uppercase truncate">{entry.portfolioName}</p>
                       <StrategyBadge strategyType={entry.strategyType} />
                     </div>
-                    <p className="text-xs text-[#58586A]">{truncateAddress(entry.walletAddress)}</p>
+                    <p className="text-xs text-text-dim">{truncateAddress(entry.walletAddress)}</p>
                   </div>
                   <div className="flex items-center gap-6 shrink-0">
                     <div className="text-right">
-                      <p className="text-[10px] uppercase text-[#58586A]">Return</p>
-                      <p className={`text-sm font-semibold ${(entry.totalReturnPct ?? 0) >= 0 ? 'text-[#3DD68C]' : 'text-[#F04438]'}`}>
+                      <p className="text-[10px] uppercase text-text-dim">Return</p>
+                      <p className={`text-sm font-semibold font-mono ${(entry.totalReturnPct ?? 0) >= 0 ? 'text-success' : 'text-danger'}`}>
                         {entry.totalReturnPct != null ? formatPct(entry.totalReturnPct) : '—'}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-[10px] uppercase text-[#58586A]">Copiers</p>
-                      <p className="text-sm text-white flex items-center gap-1">
-                        <Users className="w-3 h-3 text-[#58586A]" /> {entry.copierCount}
+                      <p className="text-[10px] uppercase text-text-dim">Copiers</p>
+                      <p className="text-sm text-foreground flex items-center gap-1">
+                        <Users className="w-3 h-3 text-text-dim" /> {entry.copierCount}
                       </p>
                     </div>
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">

@@ -17,11 +17,9 @@ export default function Portfolios() {
 
   if (!isConnected) {
     return (
-      <div className="space-y-6">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#58586A] mb-1">Studio</p>
-          <h1 className="text-2xl font-semibold text-white">My Portfolios</h1>
-        </div>
+      <div className="px-10 py-12 max-w-[1600px]">
+        <div className="text-xs tracking-[0.2em] text-text-dim mb-3">STUDIO</div>
+        <h1 className="text-6xl md:text-7xl font-display font-medium tracking-tight uppercase mb-12">My Portfolios</h1>
         <EmptyState
           icon={Wallet}
           title="Connect your wallet"
@@ -38,16 +36,16 @@ export default function Portfolios() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="px-10 py-12 max-w-[1600px]">
+      <div className="text-xs tracking-[0.2em] text-text-dim mb-3">STUDIO</div>
+      <div className="flex items-start justify-between mb-12">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#58586A] mb-1">Studio</p>
-          <h1 className="text-2xl font-semibold text-white">My Portfolios</h1>
-          <p className="text-sm text-[#9191A4] mt-1">
+          <h1 className="text-6xl md:text-7xl font-display font-medium tracking-tight uppercase">My Portfolios</h1>
+          <p className="text-muted-foreground mt-3">
             Your deployed strategy vaults. Each portfolio runs autonomously via the keeper.
           </p>
         </div>
-        <Button asChild className="btn-pill">
+        <Button asChild className="btn-pill shrink-0 mt-2">
           <Link to="/explore">
             <Plus className="w-4 h-4" /> Deploy New
           </Link>
@@ -59,7 +57,7 @@ export default function Portfolios() {
           {[1, 2, 3].map((i) => <Skeleton key={i} className="h-48 rounded-xl" />)}
         </div>
       ) : error ? (
-        <div className="rounded-xl border border-[rgba(239,68,68,0.2)] bg-[rgba(239,68,68,0.06)] p-6 text-center text-sm text-[#F47C72]">
+        <div className="rounded-xl border border-danger/20 bg-danger/5 p-6 text-center text-sm text-danger">
           Failed to load portfolios. Make sure the API server is running.
         </div>
       ) : !portfolios || portfolios.length === 0 ? (

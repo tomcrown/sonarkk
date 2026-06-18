@@ -549,7 +549,7 @@ export default function PortfolioDetail() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="px-10 py-12 max-w-[1600px] space-y-6">
         <Skeleton className="h-8 w-48" />
         <div className="grid grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
@@ -562,16 +562,15 @@ export default function PortfolioDetail() {
 
   if (error || !portfolio) {
     return (
-      <div
-        className="rounded-xl p-8 text-center"
-        style={{ border: '1px solid rgba(239,68,68,0.2)', background: 'rgba(239,68,68,0.06)' }}
-      >
-        <p className="text-sm mb-4" style={{ color: 'var(--status-red)' }}>
-          {error ? 'Failed to load portfolio.' : 'Portfolio not found.'}
-        </p>
-        <Button asChild variant="outline">
-          <Link to="/portfolios">Back to Portfolios</Link>
-        </Button>
+      <div className="px-10 py-12 max-w-[1600px]">
+        <div className="rounded-xl p-8 text-center border border-danger/20 bg-danger/5">
+          <p className="text-sm mb-4 text-danger">
+            {error ? 'Failed to load portfolio.' : 'Portfolio not found.'}
+          </p>
+          <Button asChild variant="outline">
+            <Link to="/portfolios">Back to Portfolios</Link>
+          </Button>
+        </div>
       </div>
     )
   }
@@ -584,7 +583,7 @@ export default function PortfolioDetail() {
   const latestNav = rawNavHistory.at(-1)?.navPerShare ?? portfolio.navPerShareRaw
 
   return (
-    <div className="space-y-8">
+    <div className="px-10 py-12 max-w-[1600px] space-y-8">
       {/* Breadcrumb */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
