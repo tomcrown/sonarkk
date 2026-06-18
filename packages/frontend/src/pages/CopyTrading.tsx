@@ -21,7 +21,7 @@ export default function CopyTrading() {
   return (
     <div className="px-10 py-12 max-w-[1600px]">
       <div className="text-xs tracking-[0.2em] text-text-dim mb-3">MIRROR</div>
-      <h1 className="text-6xl md:text-7xl font-display font-medium tracking-tight uppercase mb-12">Copy Trading</h1>
+      <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase mb-10">Copy Trading</h1>
 
       {data?.caveat && <LeaderboardCaveat caveat={data.caveat} />}
 

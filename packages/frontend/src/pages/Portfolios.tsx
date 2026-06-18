@@ -19,7 +19,7 @@ export default function Portfolios() {
     return (
       <div className="px-10 py-12 max-w-[1600px]">
         <div className="text-xs tracking-[0.2em] text-text-dim mb-3">STUDIO</div>
-        <h1 className="text-6xl md:text-7xl font-display font-medium tracking-tight uppercase mb-12">My Portfolios</h1>
+        <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase mb-10">My Portfolios</h1>
         <EmptyState
           icon={Wallet}
           title="Connect your wallet"
@@ -40,7 +40,7 @@ export default function Portfolios() {
       <div className="text-xs tracking-[0.2em] text-text-dim mb-3">STUDIO</div>
       <div className="flex items-start justify-between mb-12">
         <div>
-          <h1 className="text-6xl md:text-7xl font-display font-medium tracking-tight uppercase">My Portfolios</h1>
+          <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase">My Portfolios</h1>
           <p className="text-muted-foreground mt-3">
             Your deployed strategy vaults. Each portfolio runs autonomously via the keeper.
           </p>

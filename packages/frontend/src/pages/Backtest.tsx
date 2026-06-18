@@ -127,7 +127,7 @@ export default function Backtest() {
   return (
     <div className="px-10 py-12 max-w-[1600px]">
       <div className="text-xs tracking-[0.2em] text-text-dim mb-3">RESEARCH</div>
-      <h1 className="text-6xl md:text-7xl font-display font-medium tracking-tight uppercase mb-12">Simulation Room</h1>
+      <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase mb-8">Simulation Room</h1>
       <p className="text-muted-foreground mb-12">
         Replay strategies against real oracle and SVI data. Results use synthetic trader flow on testnet.
       </p>

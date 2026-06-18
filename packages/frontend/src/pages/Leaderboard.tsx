@@ -25,7 +25,7 @@ export default function Leaderboard() {
   return (
     <div className="px-10 py-12 max-w-[1600px]">
       <div className="text-xs tracking-[0.2em] text-text-dim mb-3">DISCOVER</div>
-      <h1 className="text-6xl md:text-7xl font-display font-medium tracking-tight uppercase mb-12">Leaderboard</h1>
+      <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase mb-10">Leaderboard</h1>
 
       {/* Summary stat cards */}
       <div className="grid grid-cols-3 gap-4 mb-12">
@@ -36,7 +36,7 @@ export default function Leaderboard() {
         ].map((s) => (
           <div key={s.l} className="bg-card border border-border rounded-lg p-6">
             <div className="text-[10px] tracking-[0.15em] text-text-dim mb-3">{s.l}</div>
-            <div className="text-5xl font-display">{s.v}</div>
+            <div className="text-2xl md:text-3xl font-display font-medium">{s.v}</div>
           </div>
         ))}
       </div>

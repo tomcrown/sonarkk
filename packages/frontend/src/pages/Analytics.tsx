@@ -183,7 +183,7 @@ function ContextCard({
         <Skeleton className="h-10 w-28 mb-3" />
       ) : (
         <div
-          className="text-4xl md:text-5xl font-display font-medium tracking-tight"
+          className="text-2xl md:text-3xl font-display font-medium tracking-tight"
           style={accent ? { color: accent } : {}}
         >
           {value}
@@ -223,7 +223,7 @@ export default function Analytics() {
   return (
     <div className="px-10 py-12 max-w-[1600px]">
       <div className="text-xs tracking-[0.2em] text-text-dim mb-3">INTELLIGENCE</div>
-      <h1 className="text-6xl md:text-7xl font-display font-medium tracking-tight uppercase mb-12">
+      <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase mb-10">
         Market Intel
       </h1>
 

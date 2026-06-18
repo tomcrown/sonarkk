@@ -294,7 +294,7 @@ export default function Explore() {
   return (
     <div className="px-10 py-12 max-w-[1600px]">
       <div className="text-xs tracking-[0.2em] text-text-dim mb-3">DEPLOY</div>
-      <h1 className="text-6xl md:text-7xl font-display font-medium tracking-tight uppercase mb-3">Strategy Studio</h1>
+      <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase mb-3">Strategy Studio</h1>
       <p className="text-muted-foreground mb-12">Build, test, and deploy automated strategies on DeepBook Predict.</p>
 
       {/* ── Filter pills ─────────────────────────────────────────────── */}
