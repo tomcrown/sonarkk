@@ -9,7 +9,7 @@ interface UseChatReturn {
   clearMessages: () => void
 }
 
-export function useChat(): UseChatReturn {
+export function useChat(walletAddress?: string): UseChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -33,7 +33,7 @@ export function useChat(): UseChatReturn {
       abortRef.current = new AbortController()
 
       try {
-        const gen = streamChat(content, portfolioId, messages, abortRef.current.signal)
+        const gen = streamChat(content, portfolioId, messages, abortRef.current.signal, walletAddress)
         let accumulated = ''
 
         for await (const token of gen) {
@@ -64,7 +64,7 @@ export function useChat(): UseChatReturn {
         abortRef.current = null
       }
     },
-    [messages, isStreaming],
+    [messages, isStreaming, walletAddress],
   )
 
   const clearMessages = useCallback(() => {

@@ -43,7 +43,7 @@ createRoot(root).render(
       <SuiClientProvider networks={networks} defaultNetwork="testnet">
         <WalletProvider autoConnect>
           <EnokiFlowProvider apiKey={ENOKI_API_KEY}>
-            <BrowserRouter>
+            <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
               <App />
             </BrowserRouter>
           </EnokiFlowProvider>

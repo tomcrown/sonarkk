@@ -174,6 +174,35 @@ button { cursor: pointer; }
   -webkit-text-fill-color: transparent;
 }
 
+/* Page-level hero title — ClashX-scale */
+.page-title {
+  font-size: clamp(36px, 4vw, 56px);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--ink-primary);
+}
+
+/* Section card heading — bold, uppercase, readable */
+.card-heading {
+  font-size: 16px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--ink-primary);
+}
+
+/* Hero stat number — massive, dominant */
+.hero-num {
+  font-size: clamp(36px, 4vw, 52px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--ink-primary);
+}
+
 .section-label {
   font-size: 9.5px;
   font-weight: 600;

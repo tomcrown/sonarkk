@@ -224,7 +224,31 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
     if (policyCheck.reason === 'revoked') {
       await prisma.portfolio.update({ where: { id: portfolio.id }, data: { isActive: false } });
     }
+    if (policyCheck.reason === 'expired') {
+      await prisma.portfolio.update({
+        where: { id: portfolio.id },
+        data: { isPaused: true, pauseReason: 'policy_cap_expired — call refresh_policy to renew' },
+      });
+    }
     return;
+  }
+
+  // Warn if PolicyCap expires within 7 days so the owner can renew before it blocks the keeper.
+  {
+    const SEVEN_DAYS_MS = 7n * 24n * 60n * 60n * 1000n;
+    const nowMs = BigInt(Date.now());
+    if (policyCheck.state.expiry_ms < nowMs + SEVEN_DAYS_MS) {
+      const daysLeft = Number((policyCheck.state.expiry_ms - nowMs) / (24n * 60n * 60n * 1000n));
+      log.warn(
+        { portfolioId, policyCapId, daysLeft, expiryMs: policyCheck.state.expiry_ms.toString() },
+        'PolicyCap expiring soon — owner must call portfolio::refresh_policy',
+      );
+      notifyOnAction({
+        kind: 'error', portfolioId: portfolio.id, oracleId: oracle_id,
+        expiryMs: expiryBigInt,
+        detail: `policy_cap_expires_in_${daysLeft}_day${daysLeft !== 1 ? 's' : ''}`,
+      });
+    }
   }
 
   // ── (c) READ PORTFOLIO STATE ──────────────────────────────────────────────

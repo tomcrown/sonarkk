@@ -1,6 +1,5 @@
-import { ExternalLink, Users, Copy } from 'lucide-react'
+import { Users, Copy } from 'lucide-react'
 import { motion } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
 import { type LeaderboardEntry } from '@/lib/api'
 import { formatDusdc, formatApy, formatPct, truncateAddress } from '@/lib/format'
 import { STRATEGY_NAMES, BETTOR_STRATEGIES } from '@/lib/constants'
@@ -14,8 +13,6 @@ interface LeaderboardTableProps {
 }
 
 export function LeaderboardTable({ entries, onCopy }: LeaderboardTableProps) {
-  const navigate = useNavigate()
-
   return (
     <div className="overflow-x-auto">
       <table className="w-full" aria-label="Strategy leaderboard">
@@ -51,12 +48,9 @@ export function LeaderboardTable({ entries, onCopy }: LeaderboardTableProps) {
               {/* Strategy name + badge */}
               <td className="py-3.5 pr-4">
                 <div className="flex flex-col gap-1">
-                  <button
-                    className="text-sm font-semibold text-white uppercase hover:text-[#D4CDF9] transition-colors text-left"
-                    onClick={() => navigate(`/portfolios/${entry.portfolioId}`)}
-                  >
+                  <span className="text-sm font-semibold text-white uppercase">
                     {entry.portfolioName}
-                  </button>
+                  </span>
                   <div className="flex items-center gap-1.5">
                     <StrategyBadge strategyType={entry.strategyType} />
                     {BETTOR_STRATEGIES.has(entry.strategyType) && (
@@ -80,14 +74,14 @@ export function LeaderboardTable({ entries, onCopy }: LeaderboardTableProps) {
 
               {/* Return */}
               <td className="py-3.5 pr-4">
-                <span className={`text-sm font-semibold ${entry.totalReturnPct >= 0 ? 'text-[#3DD68C]' : 'text-[#F04438]'}`}>
-                  {formatPct(entry.totalReturnPct)}
+                <span className={`text-sm font-semibold ${(entry.totalReturnPct ?? 0) >= 0 ? 'text-[#3DD68C]' : 'text-[#F04438]'}`}>
+                  {entry.totalReturnPct != null ? formatPct(entry.totalReturnPct) : '—'}
                 </span>
               </td>
 
               {/* APY */}
               <td className="py-3.5 pr-4">
-                <span className="text-sm text-[#9191A4]">{formatApy(entry.rollingApyPct)}</span>
+                <span className="text-sm text-[#9191A4]">{entry.rollingApyPct != null ? formatApy(entry.rollingApyPct) : '—'}</span>
               </td>
 
               {/* Cycles */}
@@ -106,14 +100,6 @@ export function LeaderboardTable({ entries, onCopy }: LeaderboardTableProps) {
               {/* Actions */}
               <td className="py-3.5">
                 <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => navigate(`/portfolios/${entry.portfolioId}`)}
-                    aria-label={`View ${entry.portfolioName}`}
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </Button>
                   {onCopy && (
                     <Button
                       variant="outline"

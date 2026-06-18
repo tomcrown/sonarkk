@@ -240,9 +240,9 @@ export default function Landing() {
                 <div className="text-right">
                   <p
                     className="font-bold text-sm"
-                    style={{ color: entry.totalReturnPct >= 0 ? 'var(--status-green)' : 'var(--status-red)' }}
+                    style={{ color: (entry.totalReturnPct ?? 0) >= 0 ? 'var(--status-green)' : 'var(--status-red)' }}
                   >
-                    {formatPct(entry.totalReturnPct)}
+                    {entry.totalReturnPct != null ? formatPct(entry.totalReturnPct) : '—'}
                   </p>
                   <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>{entry.cycleCount} cycles</p>
                 </div>

@@ -1,13 +1,11 @@
 import { Plus, Wallet } from 'lucide-react'
-import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
 import { useCurrentWallet } from '@mysten/dapp-kit'
 import { usePortfolios } from '@/hooks/usePortfolios'
-import { PortfolioCard } from '@/components/portfolio/PortfolioCard'
+import { PortfolioGrid } from '@/components/portfolio/PortfolioGrid'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { type PortfolioListItem } from '@/lib/api'
+import { Link } from 'react-router-dom'
 import { useState } from 'react'
 import { ConnectModal } from '@/components/wallet/ConnectModal'
 
@@ -76,20 +74,7 @@ export default function Portfolios() {
           }
         />
       ) : (
-        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {portfolios.map((p: PortfolioListItem, i: number) => (
-            <motion.div
-              key={p.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.06 }}
-            >
-              <Link to={`/portfolios/${p.id}`}>
-                <PortfolioCard portfolio={p} />
-              </Link>
-            </motion.div>
-          ))}
-        </div>
+        <PortfolioGrid portfolios={portfolios} />
       )}
     </div>
   )

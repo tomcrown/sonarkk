@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react'
-import { useCurrentWallet } from '@mysten/dapp-kit'
+import { useCurrentWallet, useCurrentAccount } from '@mysten/dapp-kit'
 import { MessageSquare, Plus, History } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useChat } from '@/hooks/useChat'
@@ -19,7 +19,8 @@ const SUGGESTIONS = [
 
 export default function Copilot() {
   const { isConnected } = useCurrentWallet()
-  const { messages, isStreaming, error, sendMessage, clearMessages } = useChat()
+  const account = useCurrentAccount()
+  const { messages, isStreaming, error, sendMessage, clearMessages } = useChat(account?.address)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [showConnectModal, setShowConnectModal] = useState(false)
 
@@ -87,14 +88,13 @@ export default function Copilot() {
                 <p className="text-sm text-[#58586A] mb-8">I can help with strategy analysis, market conditions, and your portfolio.</p>
               </>
             )}
-            {/* Suggestion chips */}
+            {/* Suggestion chips — work without wallet (market questions need no auth) */}
             <div className="flex flex-wrap gap-2 justify-center max-w-lg">
               {SUGGESTIONS.map((s) => (
                 <button
                   key={s}
                   onClick={() => sendMessage(s)}
-                  disabled={!isConnected}
-                  className="rounded-full border border-[rgba(169,168,236,0.2)] bg-[rgba(169,168,236,0.06)] px-4 py-2 text-xs text-[#9191A4] hover:border-[rgba(169,168,236,0.4)] hover:text-white hover:bg-[rgba(169,168,236,0.1)] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="rounded-full border border-[rgba(169,168,236,0.2)] bg-[rgba(169,168,236,0.06)] px-4 py-2 text-xs text-[#9191A4] hover:border-[rgba(169,168,236,0.4)] hover:text-white hover:bg-[rgba(169,168,236,0.1)] transition-all"
                 >
                   {s}
                 </button>
@@ -138,8 +138,8 @@ export default function Copilot() {
         <div className="max-w-2xl mx-auto">
           <ChatInput
             onSend={sendMessage}
-            disabled={!isConnected || isStreaming}
-            placeholder={isConnected ? 'Ask about your portfolio...' : 'Connect your wallet to start chatting...'}
+            disabled={isStreaming}
+            placeholder={isConnected ? 'Ask about your portfolio...' : 'Ask anything — connect wallet for portfolio context...'}
           />
           <div className="flex items-center justify-between mt-2 px-1">
             <p className="text-[10px] uppercase tracking-wider text-[#58586A]">

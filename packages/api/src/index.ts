@@ -23,6 +23,7 @@ import { chatRouter }        from './routes/chat.js';
 import { contextRouter }     from './routes/context.js';
 import { leaderboardRouter } from './routes/leaderboard.js';
 import { portfolioRouter }   from './routes/portfolio.js';
+import { vaultConfigRouter } from './routes/vault-configs.js';
 
 const app = express();
 
@@ -37,10 +38,11 @@ app.use((req, _res, next) => {
 });
 
 // ── Routes ─────────────────────────────────────────────────────────────────────
-app.use('/chat',        chatRouter);
-app.use('/context',     contextRouter);
-app.use('/leaderboard', leaderboardRouter);
-app.use('/portfolios',  portfolioRouter);
+app.use('/chat',          chatRouter);
+app.use('/context',       contextRouter);
+app.use('/leaderboard',   leaderboardRouter);
+app.use('/portfolios',    portfolioRouter);
+app.use('/vault-configs', vaultConfigRouter);
 
 // Backtest + SVI surface routes are registered by Module C (imported at runtime).
 // They live in ./routes/backtest.ts and ./routes/svi-surface.ts
@@ -71,13 +73,16 @@ if (env.KEEPER_PRIVATE_KEY) {
 
 app.get('/chain-config', (_req, res) => {
   res.json({
-    keeperAddress:  _keeperAddress,
-    sonarkPackage:  env.SONARK_PACKAGE,
-    predictPackage: env.PREDICT_PACKAGE,
-    predictObject:  env.PREDICT_OBJECT,
-    dusdcType:      env.DUSDC_TYPE,
-    clockId:        '0x0000000000000000000000000000000000000000000000000000000000000006',
-    network:        env.SUI_NETWORK,
+    keeperAddress:       _keeperAddress,
+    sonarkPackage:       env.SONARK_PACKAGE,
+    predictPackage:      env.PREDICT_PACKAGE,
+    predictObject:       env.PREDICT_OBJECT,
+    dusdcType:           env.DUSDC_TYPE,
+    clockId:             '0x0000000000000000000000000000000000000000000000000000000000000006',
+    network:             env.SUI_NETWORK,
+    sealKeyServerIds:    env.SEAL_KEY_SERVER_IDS.split(',').map(s => s.trim()).filter(Boolean),
+    walrusPublisherUrl:  env.WALRUS_PUBLISHER_URL,
+    walrusAggregatorUrl: env.WALRUS_AGGREGATOR_URL,
   });
 });
 

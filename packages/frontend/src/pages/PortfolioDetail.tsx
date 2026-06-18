@@ -1,8 +1,8 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft, Settings, TrendingUp, Activity, Clock, DollarSign,
-  LogOut, CheckCircle, Loader, AlertCircle, ExternalLink, type LucideIcon,
+  LogOut, CheckCircle, Loader, AlertCircle, ExternalLink, Pause, Play, RefreshCw, type LucideIcon,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from '@mysten/dapp-kit'
@@ -364,13 +364,188 @@ function WithdrawModal({
   )
 }
 
+// ── RenewPolicyCapModal ────────────────────────────────────────────────────────
+
+type RenewStep = 'preview' | 'renewing' | 'done' | 'error'
+
+function RenewPolicyCapModal({
+  open,
+  onClose,
+  portfolioObjectId,
+  policyCapId,
+  currentExpiryMs,
+}: {
+  open: boolean
+  onClose: () => void
+  portfolioObjectId: string
+  policyCapId: string
+  currentExpiryMs: number
+}) {
+  const [step, setStep] = useState<RenewStep>('preview')
+  const [txDigest, setTxDigest] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
+
+  const account = useCurrentAccount()
+  const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction()
+  const { data: chainConfig } = useChainConfig()
+
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
+  const newExpiryMs = BigInt(Math.max(currentExpiryMs, Date.now()) + THIRTY_DAYS_MS)
+  const newBudgetCapRaw = 5_000_000n * 1_000n  // 5,000 DUSDC budget cap
+
+  const handleRenew = useCallback(async () => {
+    if (!account || !chainConfig?.sonarkPackage) return
+    const PKG   = chainConfig.sonarkPackage
+    const DUSDC = chainConfig.dusdcType
+
+    setStep('renewing')
+    try {
+      const tx = new Transaction()
+      tx.moveCall({
+        target: `${PKG}::portfolio::refresh_policy`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolioObjectId),
+          tx.object(policyCapId),
+          tx.pure.u64(newBudgetCapRaw),
+          tx.pure.u64(newExpiryMs),
+        ],
+      })
+      const result = await signAndExecute({ transaction: tx })
+      setTxDigest(result.digest)
+      setStep('done')
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : String(err))
+      setStep('error')
+    }
+  }, [account, chainConfig, portfolioObjectId, policyCapId, newBudgetCapRaw, newExpiryMs, signAndExecute])
+
+  const handleClose = () => {
+    if (step === 'renewing') return
+    setStep('preview')
+    setTxDigest('')
+    setErrorMsg('')
+    onClose()
+  }
+
+  const newExpiryDate = new Date(Number(newExpiryMs)).toLocaleDateString('en-US', {
+    year: 'numeric', month: 'short', day: 'numeric',
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Renew PolicyCap</DialogTitle>
+          <DialogDescription>
+            Extend keeper authorization for another 30 days.
+          </DialogDescription>
+        </DialogHeader>
+
+        <AnimatePresence mode="wait">
+          {step === 'preview' && (
+            <motion.div key="preview" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+              <div className="rounded-lg divide-y" style={{ border: '1px solid var(--line)', background: 'var(--bg-inset)' }}>
+                {([
+                  ['New expiry', newExpiryDate],
+                  ['New budget cap', `${(Number(newBudgetCapRaw) / 1e6).toLocaleString()} DUSDC`],
+                ] as [string, string][]).map(([k, v]) => (
+                  <div key={k} className="flex justify-between px-4 py-2.5 text-sm">
+                    <span style={{ color: 'var(--ink-muted)' }}>{k}</span>
+                    <span className="font-medium" style={{ color: 'var(--ink-primary)' }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>
+                This calls <code>portfolio::refresh_policy</code> on-chain. You must be the portfolio owner.
+              </p>
+            </motion.div>
+          )}
+
+          {step === 'renewing' && (
+            <motion.div key="renewing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-8 flex flex-col items-center gap-3">
+              <Loader className="w-8 h-8 animate-spin" style={{ color: 'var(--accent)' }} />
+              <p className="text-sm" style={{ color: 'var(--ink-secondary)' }}>Submitting renewal transaction…</p>
+            </motion.div>
+          )}
+
+          {step === 'done' && (
+            <motion.div key="done" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} className="py-6 text-center space-y-4">
+              <CheckCircle className="w-10 h-10 mx-auto" style={{ color: 'var(--status-green)' }} />
+              <div>
+                <p className="font-semibold" style={{ color: 'var(--ink-primary)' }}>PolicyCap renewed!</p>
+                <p className="text-sm mt-1" style={{ color: 'var(--ink-secondary)' }}>
+                  The keeper is authorized until {newExpiryDate}.
+                </p>
+              </div>
+              {txDigest && (
+                <a href={txUrl(txDigest)} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs hover:underline" style={{ color: 'var(--accent)' }}>
+                  View on Explorer <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </motion.div>
+          )}
+
+          {step === 'error' && (
+            <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-4">
+              <div className="flex items-start gap-2 rounded-lg px-4 py-3"
+                style={{ background: 'rgba(240,68,56,0.08)', border: '1px solid rgba(240,68,56,0.2)' }}>
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'var(--status-red)' }} />
+                <p className="text-sm" style={{ color: 'var(--status-red)' }}>{errorMsg}</p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <DialogFooter>
+          {step === 'done' ? (
+            <Button onClick={handleClose}>Close</Button>
+          ) : step === 'error' ? (
+            <>
+              <Button variant="ghost" onClick={handleClose}>Close</Button>
+              <Button onClick={() => { setStep('preview'); setErrorMsg('') }}>Retry</Button>
+            </>
+          ) : step === 'preview' ? (
+            <>
+              <Button variant="ghost" onClick={handleClose}>Cancel</Button>
+              <Button onClick={handleRenew} disabled={!account}>
+                {!account ? 'Connect wallet' : 'Renew 30 Days'}
+              </Button>
+            </>
+          ) : null}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function PortfolioDetail() {
   const { id } = useParams<{ id: string }>()
   const { data: portfolio, isLoading, error } = usePortfolioDetail(id!)
+  const { mutate: patchPortfolio, isPending: isPausing } = usePatchPortfolio(id!)
   const [showConfig, setShowConfig] = useState(false)
   const [showWithdraw, setShowWithdraw] = useState(false)
+  const [showRenew, setShowRenew] = useState(false)
+  const [policyCapExpiryMs, setPolicyCapExpiryMs] = useState<number | null>(null)
+
+  const suiClient = useSuiClient()
+
+  // Read PolicyCap expiry_ms from the on-chain object
+  useEffect(() => {
+    if (!portfolio?.policyCapId) return
+    suiClient.getObject({ id: portfolio.policyCapId, options: { showContent: true } })
+      .then((res) => {
+        const content = res.data?.content
+        if (content && 'fields' in content) {
+          const fields = content.fields as Record<string, unknown>
+          if (fields['expiry_ms']) setPolicyCapExpiryMs(Number(fields['expiry_ms']))
+        }
+      })
+      .catch(() => { /* non-fatal */ })
+  }, [portfolio?.policyCapId, suiClient])
 
   if (isLoading) {
     return (
@@ -432,6 +607,17 @@ export default function PortfolioDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isPausing}
+            onClick={() => patchPortfolio({ is_paused: !portfolio.isPaused })}
+          >
+            {portfolio.isPaused
+              ? <><Play className="w-3.5 h-3.5" /> Resume</>
+              : <><Pause className="w-3.5 h-3.5" /> Pause</>
+            }
+          </Button>
           {portfolio.vaultObjectId && (
             <Button
               variant="outline"
@@ -439,6 +625,11 @@ export default function PortfolioDetail() {
               onClick={() => setShowWithdraw(true)}
             >
               <LogOut className="w-3.5 h-3.5" /> Withdraw
+            </Button>
+          )}
+          {portfolio.policyCapId && (
+            <Button variant="outline" size="sm" onClick={() => setShowRenew(true)}>
+              <RefreshCw className="w-3.5 h-3.5" /> Renew Cap
             </Button>
           )}
           <Button variant="outline" size="sm" onClick={() => setShowConfig(true)}>
@@ -484,6 +675,39 @@ export default function PortfolioDetail() {
           icon={Clock as LucideIcon}
         />
       </div>
+
+      {/* PolicyCap expiry banner — shown when expiry is within 30 days or already passed */}
+      {policyCapExpiryMs !== null && policyCapExpiryMs < Date.now() + 30 * 24 * 60 * 60 * 1000 && (
+        <div
+          className="flex items-center justify-between rounded-xl px-5 py-3.5"
+          style={{
+            background: policyCapExpiryMs < Date.now()
+              ? 'rgba(240,68,56,0.08)' : 'rgba(232,166,39,0.07)',
+            border: `1px solid ${policyCapExpiryMs < Date.now() ? 'rgba(240,68,56,0.2)' : 'rgba(232,166,39,0.18)'}`,
+          }}
+        >
+          <div className="flex items-start gap-3">
+            <AlertCircle
+              className="w-4 h-4 shrink-0 mt-0.5"
+              style={{ color: policyCapExpiryMs < Date.now() ? 'var(--status-red)' : 'var(--status-yellow)' }}
+            />
+            <div>
+              <p className="text-sm font-medium" style={{ color: 'var(--ink-primary)' }}>
+                {policyCapExpiryMs < Date.now() ? 'PolicyCap expired' : 'PolicyCap expiring soon'}
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--ink-secondary)' }}>
+                {policyCapExpiryMs < Date.now()
+                  ? 'The keeper cannot act until you renew the policy. Renew to resume automatic execution.'
+                  : `Expires ${new Date(policyCapExpiryMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}. Renew before it lapses.`
+                }
+              </p>
+            </div>
+          </div>
+          <Button size="sm" onClick={() => setShowRenew(true)} className="shrink-0 ml-4">
+            <RefreshCw className="w-3.5 h-3.5" /> Renew
+          </Button>
+        </div>
+      )}
 
       <Tabs defaultValue="performance">
         <TabsList>
@@ -640,6 +864,16 @@ export default function PortfolioDetail() {
           onClose={() => setShowWithdraw(false)}
           portfolioObjectId={portfolio.vaultObjectId}
           navPerShareRaw={portfolio.navPerShareRaw}
+        />
+      )}
+
+      {portfolio.vaultObjectId && portfolio.policyCapId && (
+        <RenewPolicyCapModal
+          open={showRenew}
+          onClose={() => setShowRenew(false)}
+          portfolioObjectId={portfolio.vaultObjectId}
+          policyCapId={portfolio.policyCapId}
+          currentExpiryMs={policyCapExpiryMs ?? Date.now()}
         />
       )}
     </div>

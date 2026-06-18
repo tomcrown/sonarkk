@@ -31,6 +31,7 @@ interface DeployConfig {
   liquidityReservePct: string
   drawdownPauseThresholdPct: string
   volTargetBps: string
+  hedgeMultiplier: string
 }
 
 type Step = 'config' | 'confirm' | 'deploying' | 'depositing' | 'registering' | 'done' | 'error'
@@ -50,6 +51,7 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
     liquidityReservePct: '0.10',
     drawdownPauseThresholdPct: '0.15',
     volTargetBps: '2000',
+    hedgeMultiplier: '1.0',
   })
   const [step, setStep] = useState<Step>('config')
   const [statusMsg, setStatusMsg] = useState('')
@@ -63,10 +65,9 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
   const { data: chainConfig } = useChainConfig()
   const qc = useQueryClient()
 
-  if (strategyType === null) return null
-
-  const name = STRATEGY_NAMES[strategyType] ?? `Strategy ${strategyType}`
-  const isBettor = BETTOR_STRATEGIES.has(strategyType)
+  // Derived — computed unconditionally so hooks order is stable
+  const name     = STRATEGY_NAMES[strategyType ?? 0] ?? `Strategy ${strategyType ?? 0}`
+  const isBettor = BETTOR_STRATEGIES.has(strategyType ?? 0)
 
   const handleClose = () => {
     if (step === 'deploying' || step === 'depositing' || step === 'registering') return
@@ -79,6 +80,7 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
   }
 
   const handleDeploy = useCallback(async () => {
+    if (strategyType === null) return
     if (!account || !chainConfig?.keeperAddress || !chainConfig.sonarkPackage) {
       setErrorMsg('Wallet not connected or chain config unavailable.')
       setStep('error')
@@ -191,12 +193,13 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
         name:                   config.name || undefined,
         initial_deposit_raw:    depositRaw.toString(),
         util_target:            parseFloat(config.utilTarget),
-        strike_selection:       config.strikeSelection,
+        strike_selection:       isBettor ? config.strikeSelection : 'ATM',
         liquidity_reserve_pct:  parseFloat(config.liquidityReservePct),
-        drawdown_pause_threshold_pct: config.drawdownPauseThresholdPct
+        drawdown_pause_threshold_pct: config.drawdownPauseThresholdPct && config.drawdownPauseThresholdPct !== '0'
           ? parseFloat(config.drawdownPauseThresholdPct)
           : null,
-        vol_target_bps: isBettor ? parseInt(config.volTargetBps) : null,
+        vol_target_bps: strategyType === 5 ? parseInt(config.volTargetBps) : null,
+        hedge_multiplier: strategyType === 1 ? parseFloat(config.hedgeMultiplier) : undefined,
       })
 
       // Invalidate portfolio list so Dashboard/Portfolios page refreshes
@@ -211,6 +214,9 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
   }, [account, chainConfig, config, isBettor, signAndExecute, suiClient, strategyType, qc])
 
   const isProcessing = step === 'deploying' || step === 'depositing' || step === 'registering'
+
+  // Early return AFTER all hooks — never return before hooks or their count changes per render
+  if (strategyType === null) return null
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -273,21 +279,6 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="deploy-strike">Strike Selection</Label>
-                  <Select
-                    value={config.strikeSelection}
-                    onValueChange={(v) => setConfig((c) => ({ ...c, strikeSelection: v }))}
-                  >
-                    <SelectTrigger id="deploy-strike"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ATM">ATM</SelectItem>
-                      <SelectItem value="OTM_1">OTM +1</SelectItem>
-                      <SelectItem value="OTM_2">OTM +2</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
                   <Label htmlFor="deploy-reserve">Liquidity Reserve</Label>
                   <Select
                     value={config.liquidityReservePct}
@@ -301,6 +292,77 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
                     </SelectContent>
                   </Select>
                 </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="deploy-drawdown">Drawdown Pause</Label>
+                  <Select
+                    value={config.drawdownPauseThresholdPct}
+                    onValueChange={(v) => setConfig((c) => ({ ...c, drawdownPauseThresholdPct: v }))}
+                  >
+                    <SelectTrigger id="deploy-drawdown"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Disabled</SelectItem>
+                      <SelectItem value="0.10">10%</SelectItem>
+                      <SelectItem value="0.15">15% (recommended)</SelectItem>
+                      <SelectItem value="0.20">20%</SelectItem>
+                      <SelectItem value="0.30">30%</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Hedged PLP only: hedge multiplier */}
+                {strategyType === 1 && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="deploy-hedge">Hedge Multiplier</Label>
+                    <Select
+                      value={config.hedgeMultiplier}
+                      onValueChange={(v) => setConfig((c) => ({ ...c, hedgeMultiplier: v }))}
+                    >
+                      <SelectTrigger id="deploy-hedge"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0.5">0.5× (partial hedge)</SelectItem>
+                        <SelectItem value="1.0">1.0× (full hedge)</SelectItem>
+                        <SelectItem value="1.5">1.5× (over-hedge)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* Bettor strategies only: strike selection */}
+                {isBettor && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="deploy-strike">Strike Selection</Label>
+                    <Select
+                      value={config.strikeSelection}
+                      onValueChange={(v) => setConfig((c) => ({ ...c, strikeSelection: v }))}
+                    >
+                      <SelectTrigger id="deploy-strike"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ATM">ATM</SelectItem>
+                        <SelectItem value="OTM_1">OTM +1</SelectItem>
+                        <SelectItem value="OTM_2">OTM +2</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* Vol-Targeted Range only: volatility target */}
+                {strategyType === 5 && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="deploy-voltarget">Vol Target</Label>
+                    <Select
+                      value={config.volTargetBps}
+                      onValueChange={(v) => setConfig((c) => ({ ...c, volTargetBps: v }))}
+                    >
+                      <SelectTrigger id="deploy-voltarget"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1500">15%</SelectItem>
+                        <SelectItem value="2000">20% (balanced)</SelectItem>
+                        <SelectItem value="3000">30%</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
 
               {isBettor && <RiskDisclosure strategyType={strategyType} />}
@@ -327,8 +389,11 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
                   ['Name', config.name || `My ${name}`],
                   ['Deposit', `${config.initialDeposit} DUSDC`],
                   ['Utilization', `${(parseFloat(config.utilTarget) * 100).toFixed(0)}%`],
-                  ['Strike', config.strikeSelection],
                   ['Reserve', `${(parseFloat(config.liquidityReservePct) * 100).toFixed(0)}%`],
+                  ['Drawdown Pause', config.drawdownPauseThresholdPct === '0' ? 'Disabled' : `${(parseFloat(config.drawdownPauseThresholdPct) * 100).toFixed(0)}%`],
+                  ...(strategyType === 1 ? [['Hedge Multiplier', `${config.hedgeMultiplier}×`]] : []),
+                  ...(isBettor ? [['Strike', config.strikeSelection]] : []),
+                  ...(strategyType === 5 ? [['Vol Target', `${(parseInt(config.volTargetBps) / 100).toFixed(0)}%`]] : []),
                   ['PolicyCap budget', `${(parseFloat(config.initialDeposit) * 0.5).toFixed(0)} DUSDC / cycle`],
                   ['PolicyCap expiry', '30 days'],
                 ].map(([k, v]) => (

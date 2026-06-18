@@ -89,6 +89,7 @@ function serializeListItem(p: {
   isActive: boolean;
   isPaused: boolean;
   totalDepositedRaw: bigint;
+  vaultConfigId: string | null;
   createdAt: Date;
   cycles: Array<{ navPerShareAfter: bigint | null; totalNavRaw: bigint | null; createdAt: Date; status: string }>;
 }) {
@@ -103,6 +104,7 @@ function serializeListItem(p: {
     totalDepositedRaw: b(p.totalDepositedRaw) ?? '0',
     isPaused: p.isPaused,
     cycleCount: p.cycles.length,
+    vaultConfigId: p.vaultConfigId ?? null,
     createdAt: p.createdAt.toISOString(),
   };
 }
@@ -277,7 +279,7 @@ portfolioRouter.get('/:id', async (req, res) => {
             createdAt: true,
           },
         },
-        vaultConfig: { select: { id: true, name: true, isPublic: true } },
+        vaultConfig: { select: { id: true, name: true, isPublic: true, sealBlobId: true } },
       },
     });
 
@@ -319,7 +321,8 @@ portfolioRouter.get('/:id', async (req, res) => {
       strikeSelection:    p.strikeSelection,
       liquidityReservePct: p.liquidityReservePct,
       drawdownPauseThresholdPct: p.drawdownPauseThresholdPct,
-      sealBlobId:         p.vaultConfig?.id ?? null,
+      policyCapId:        p.policyCapId,
+      sealBlobId:         p.vaultConfig?.sealBlobId ?? null,
       copyFeeRaw:         null,
       createdAt:          p.createdAt.toISOString(),
       lastKeeperRun:      latestCycle?.createdAt.toISOString() ?? null,

@@ -1,7 +1,8 @@
 import { DUSDC_DIVISOR, NAV_SCALE } from './constants'
 
 /** Format raw DUSDC (6 decimals, arrives as string BigInt) to human-readable */
-export function formatDusdc(raw: string | bigint, decimals = 2): string {
+export function formatDusdc(raw: string | bigint | null | undefined, decimals = 2): string {
+  if (raw == null || raw === '') return decimals > 0 ? `0.${'0'.repeat(decimals)} DUSDC` : '0 DUSDC'
   const value = typeof raw === 'string' ? BigInt(raw) : raw
   const whole = value / BigInt(DUSDC_DIVISOR)
   const frac = value % BigInt(DUSDC_DIVISOR)

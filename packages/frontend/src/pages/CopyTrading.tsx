@@ -62,8 +62,8 @@ export default function CopyTrading() {
                   </h3>
                   <p className="text-xs text-[#58586A] mb-3">{truncateAddress(entry.walletAddress)}</p>
                   <div className="flex items-center justify-between">
-                    <span className={`text-sm font-bold ${entry.totalReturnPct >= 0 ? 'text-[#3DD68C]' : 'text-[#F04438]'}`}>
-                      {formatPct(entry.totalReturnPct)}
+                    <span className={`text-sm font-bold ${(entry.totalReturnPct ?? 0) >= 0 ? 'text-[#3DD68C]' : 'text-[#F04438]'}`}>
+                      {entry.totalReturnPct != null ? formatPct(entry.totalReturnPct) : '—'}
                     </span>
                     <Button size="sm" variant="outline" onClick={() => setSelected(entry)}>
                       <Copy className="w-3 h-3" /> Copy
@@ -107,8 +107,8 @@ export default function CopyTrading() {
                   <div className="flex items-center gap-6 shrink-0">
                     <div className="text-right">
                       <p className="text-[10px] uppercase text-[#58586A]">Return</p>
-                      <p className={`text-sm font-semibold ${entry.totalReturnPct >= 0 ? 'text-[#3DD68C]' : 'text-[#F04438]'}`}>
-                        {formatPct(entry.totalReturnPct)}
+                      <p className={`text-sm font-semibold ${(entry.totalReturnPct ?? 0) >= 0 ? 'text-[#3DD68C]' : 'text-[#F04438]'}`}>
+                        {entry.totalReturnPct != null ? formatPct(entry.totalReturnPct) : '—'}
                       </p>
                     </div>
                     <div className="text-right">
