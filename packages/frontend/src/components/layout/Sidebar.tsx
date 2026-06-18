@@ -1,8 +1,9 @@
 import { NavLink, Link } from 'react-router-dom'
 import {
   LayoutDashboard, BarChart3, Trophy, Copy, Compass,
-  MessageSquare, FolderOpen, FlaskConical, Zap,
+  MessageSquare, FolderOpen, FlaskConical,
 } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { cn } from '@/lib/cn'
 
 const NAV = [
@@ -45,12 +46,24 @@ export function Sidebar() {
       {/* Logo */}
       <Link
         to="/"
-        className="h-16 flex items-center gap-2 px-6 border-b border-sidebar-border shrink-0"
+        className="h-16 flex items-center gap-1.5 px-6 border-b border-sidebar-border shrink-0"
         aria-label="Sonark home"
       >
-        <div className="w-7 h-7 rounded-md bg-gradient-to-br from-accent-light to-accent flex items-center justify-center">
-          <Zap className="w-4 h-4 text-background" strokeWidth={2.5} />
-        </div>
+        <motion.div className="relative shrink-0" whileHover="hovered">
+          <motion.div
+            className="absolute inset-0 rounded-full bg-accent/25 blur-md scale-150 pointer-events-none"
+            variants={{ hovered: { opacity: 1 } }}
+            initial={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+          />
+          <motion.img
+            src="/sonark-logo.png"
+            alt="Sonark"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 16, repeat: Infinity, ease: 'linear' }}
+            className="relative w-11 h-11 object-contain"
+          />
+        </motion.div>
         <span className="font-display text-lg font-semibold tracking-tight text-foreground">Sonark</span>
       </Link>
 

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Zap } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { WalletButton } from '@/components/wallet/WalletButton'
 
 export function Header() {
@@ -38,10 +38,22 @@ export function LandingHeader() {
         </a>
       </div>
 
-      <Link to="/" className="flex items-center gap-2" aria-label="Sonark home">
-        <div className="w-7 h-7 rounded-md bg-gradient-to-br from-accent-light to-accent flex items-center justify-center">
-          <Zap className="w-4 h-4 text-background" strokeWidth={2.5} />
-        </div>
+      <Link to="/" className="flex items-center gap-1.5" aria-label="Sonark home">
+        <motion.div className="relative shrink-0" whileHover="hovered">
+          <motion.div
+            className="absolute inset-0 rounded-full bg-accent/25 blur-md scale-150 pointer-events-none"
+            variants={{ hovered: { opacity: 1 } }}
+            initial={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+          />
+          <motion.img
+            src="/sonark-logo.png"
+            alt="Sonark"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 16, repeat: Infinity, ease: 'linear' }}
+            className="relative w-11 h-11 object-contain"
+          />
+        </motion.div>
         <span className="font-display text-lg font-semibold">Sonark</span>
       </Link>
 
