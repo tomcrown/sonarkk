@@ -9,9 +9,9 @@ config({ path: resolve(pkgDir, '../../.env') });
 
 const schema = z.object({
   // Optional: keeper address derivation for /chain-config endpoint.
-  KEEPER_PRIVATE_KEY:  z.string().min(1).optional(),
+  KEEPER_PRIVATE_KEY:  z.preprocess(v => v || undefined, z.string().min(1).optional()),
   // Optional: AI copilot routes are disabled when absent rather than crashing the server.
-  GEMINI_API_KEY:      z.string().min(1).optional(),
+  GEMINI_API_KEY:      z.preprocess(v => v || undefined, z.string().min(1).optional()),
   GEMINI_MODEL:        z.string().default('gemini-2.0-flash'),
   API_PORT:            z.coerce.number().default(3001),
   API_CORS_ORIGIN:     z.string().default('*'),
