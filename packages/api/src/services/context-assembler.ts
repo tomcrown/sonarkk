@@ -20,6 +20,7 @@ export interface MarketContext {
   spread_at_atm: number;
   active_oracle_count: number;
   expiry_in_minutes: number | null;
+  btc_price_usd: number | null;
 }
 
 export interface PortfolioContext {
@@ -59,6 +60,22 @@ export interface LiveContext {
 const CACHE_TTL_MS = 30_000;
 const cache = new Map<string, LiveContext>();
 
+// ── BTC price fetch ───────────────────────────────────────────────────────────
+
+async function fetchBtcPrice(): Promise<number | null> {
+  try {
+    const resp = await fetch(
+      'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT',
+      { signal: AbortSignal.timeout(3000) },
+    );
+    if (!resp.ok) return null;
+    const data = (await resp.json()) as { price?: string };
+    return data.price ? parseFloat(data.price) : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Oracle fetch ───────────────────────────────────────────────────────────────
 
 interface RawOracle {
@@ -87,8 +104,15 @@ async function fetchActiveOracle(): Promise<RawOracle | null> {
 // ── Market context ─────────────────────────────────────────────────────────────
 
 async function buildMarketContext(): Promise<MarketContext | null> {
-  const oracle = await fetchActiveOracle();
+  const [oracleResult, btcPriceResult] = await Promise.allSettled([
+    fetchActiveOracle(),
+    fetchBtcPrice(),
+  ]);
+
+  const oracle = oracleResult.status === 'fulfilled' ? oracleResult.value : null;
   if (!oracle) return null;
+
+  const btcPriceUsd = btcPriceResult.status === 'fulfilled' ? btcPriceResult.value : null;
 
   const atm = oracle.atm_vol ?? computeAtmVol(oracle.svi, oracle.t_years);
   const p_atm = binaryCallProb(oracle.svi, 0);
@@ -120,6 +144,7 @@ async function buildMarketContext(): Promise<MarketContext | null> {
     spread_at_atm: spread,
     active_oracle_count: activeCount,
     expiry_in_minutes: expiryInMin,
+    btc_price_usd: btcPriceUsd,
   };
 }
 

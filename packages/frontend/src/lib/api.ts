@@ -306,6 +306,8 @@ export interface MarketContext {
   activeOracleCount: number
   latestAtmVol: number | null
   btcPriceUsd: number | null
+  spreadAtAtm: number | null
+  expiryInMinutes: number | null
   volRegime: 'calm' | 'normal' | 'high'
   timestamp: string
 }

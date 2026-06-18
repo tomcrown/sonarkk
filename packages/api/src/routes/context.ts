@@ -31,11 +31,22 @@ contextRouter.get('/', async (req, res) => {
 
   try {
     const ctx = await assembleContext(wallet_address, portfolio_id);
+
+    // Normalize regime: context-assembler uses 'high_vol', frontend expects 'high'
+    const regime = ctx.market?.regime === 'high_vol' ? 'high' : ctx.market?.regime ?? 'normal';
+
     res.json({
-      market: ctx.market,
+      market: ctx.market ? {
+        latestAtmVol:      ctx.market.atm_vol,
+        volRegime:         regime,
+        spreadAtAtm:       ctx.market.spread_at_atm,
+        activeOracleCount: ctx.market.active_oracle_count,
+        expiryInMinutes:   ctx.market.expiry_in_minutes,
+        btcPriceUsd:       ctx.market.btc_price_usd,
+        timestamp:         new Date().toISOString(),
+      } : null,
       portfolios: ctx.portfolios.map(p => ({
         ...p,
-        // Serialize BigInts for JSON transport.
         nav_per_share_now:    p.nav_per_share_now    != null ? p.nav_per_share_now.toString() : null,
         nav_per_share_before: p.nav_per_share_before != null ? p.nav_per_share_before.toString() : null,
         stop_loss_raw:        p.stop_loss_raw        != null ? p.stop_loss_raw.toString() : null,

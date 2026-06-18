@@ -72,7 +72,7 @@ function StatCard({
       {loading ? (
         <Skeleton className="h-10 w-28" />
       ) : (
-        <div className={cn('text-4xl md:text-5xl font-display font-medium tracking-tight', valueClass ?? 'text-foreground')}>
+        <div className={cn('text-2xl md:text-3xl font-display font-medium tracking-tight', valueClass ?? 'text-foreground')}>
           {value}
         </div>
       )}
@@ -176,7 +176,7 @@ export default function Dashboard() {
   return (
     <div className="px-10 py-12 max-w-[1600px]">
       <div className="text-xs tracking-[0.2em] text-text-dim mb-3">OVERVIEW</div>
-      <h1 className="text-6xl md:text-7xl font-display font-medium tracking-tight uppercase mb-12">Dashboard</h1>
+      <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase mb-10">Dashboard</h1>
 
       {/* ── 4 stat cards ───────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-10">
@@ -304,7 +304,7 @@ export default function Dashboard() {
           </div>
           {chartPoints.length > 0 && (
             <div className="text-right">
-              <div className="text-2xl font-display font-medium text-foreground">
+              <div className="text-lg font-display font-medium text-foreground">
                 {totalCurrent.toFixed(2)}
               </div>
               <div className="text-xs text-text-dim">DUSDC</div>
