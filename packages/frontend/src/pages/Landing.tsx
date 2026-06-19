@@ -5,6 +5,7 @@ import { LandingHeader } from '@/components/layout/Header'
 import { useLeaderboard } from '@/hooks/useLeaderboard'
 import { formatPct, truncateAddress } from '@/lib/format'
 import { STRATEGY_NAMES } from '@/lib/constants'
+import FloatingLines from '@/components/ui/FloatingLines'
 
 const FEATURES = [
   {
@@ -64,17 +65,25 @@ export default function Landing() {
 
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <section className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-24 pb-32">
-        {/* Glow layers */}
-        <div className="absolute inset-0 hero-glow" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-5xl h-[55%] pointer-events-none">
-          <div className="absolute inset-0 [background:conic-gradient(from_90deg_at_50%_0%,transparent_0deg,rgba(169,168,236,0.35)_140deg,rgba(212,205,249,0.55)_180deg,rgba(169,168,236,0.35)_220deg,transparent_360deg)] [mask-image:linear-gradient(to_bottom,black_0%,transparent_70%)] blur-2xl opacity-80" />
-        </div>
+        {/* FloatingLines background + dim overlay */}
+        <FloatingLines
+          enabledWaves={['bottom', 'top', 'middle']}
+          lineCount={8}
+          lineDistance={16.5}
+          bendRadius={8}
+          bendStrength={-9.5}
+          interactive
+          parallax={true}
+          animationSpeed={1.6}
+          linesGradient={['#635f5f', '#6e61c1', '#262628']}
+        />
+        <div className="absolute inset-0 bg-background/50 pointer-events-none" />
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, ease: 'easeOut' }}
-          className="relative max-w-5xl text-center mt-20"
+          className="relative z-10 max-w-5xl text-center mt-20"
         >
           <div className="inline-flex items-center gap-2 mb-8 px-4 py-1.5 rounded-full border border-border bg-card/50 backdrop-blur text-xs text-muted-foreground">
             <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
