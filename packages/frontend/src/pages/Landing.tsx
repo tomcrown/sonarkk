@@ -68,7 +68,7 @@ export default function Landing() {
         {/* FloatingLines background + dim overlay */}
         <FloatingLines
           enabledWaves={['bottom', 'top', 'middle']}
-          lineCount={8}
+          lineCount={6}
           lineDistance={16.5}
           bendRadius={8}
           bendStrength={-9.5}

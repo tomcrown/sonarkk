@@ -305,9 +305,11 @@ export default function FloatingLines({
 
     const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
 
-    const renderer = new WebGLRenderer({ antialias: !isTouchDevice, alpha: false });
-    // Cap DPR at 1.5 on touch devices to halve fragment count on mobile
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isTouchDevice ? 1.5 : 2));
+    // antialias is pointless for a fullscreen shader (no geometry edges) — skip it
+    const renderer = new WebGLRenderer({ antialias: false, alpha: false });
+    // Cap at 1 — the wave shader is smooth enough without HiDPI.
+    // DPR=2 on Retina means 4× the fragments: the single biggest perf cost.
+    renderer.setPixelRatio(1);
     renderer.domElement.style.width  = '100%';
     renderer.domElement.style.height = '100%';
     container.appendChild(renderer.domElement);
@@ -410,9 +412,17 @@ export default function FloatingLines({
       renderer.domElement.addEventListener('pointerleave', handlePointerLeave);
     }
 
+    let visible = true;
+    const io = typeof IntersectionObserver !== 'undefined'
+      ? new IntersectionObserver(([entry]) => { visible = entry!.isIntersecting; }, { threshold: 0 })
+      : null;
+    if (io) io.observe(container);
+
     let raf = 0;
     const renderLoop = () => {
       if (!active) return;
+      raf = requestAnimationFrame(renderLoop);
+      if (!visible) return;
       uniforms.iTime.value = clock.getElapsedTime();
 
       if (interactive) {
@@ -428,7 +438,6 @@ export default function FloatingLines({
       }
 
       renderer.render(scene, camera);
-      raf = requestAnimationFrame(renderLoop);
     };
     renderLoop();
 
@@ -436,6 +445,7 @@ export default function FloatingLines({
       active = false;
       cancelAnimationFrame(raf);
       if (ro) ro.disconnect();
+      if (io) io.disconnect();
       if (interactive && !isTouchDevice) {
         renderer.domElement.removeEventListener('pointermove', handlePointerMove);
         renderer.domElement.removeEventListener('pointerleave', handlePointerLeave);
