@@ -309,7 +309,7 @@ export function VaultConfigModal({ defaultStrategyType = 0, open, onClose }: Vau
   const totalRaw       = toRaw(totalDeposit)
   const deposit1Raw    = BigInt(Math.floor(Number(totalRaw) * alloc1Bps / 10000))
   const deposit2Raw    = BigInt(Math.floor(Number(totalRaw) * alloc2Bps / 10000))
-  const budgetCapRaw   = totalRaw / 2n
+  const budgetCapRaw   = totalRaw * 500n  // ~2000 cycles before refresh needed
   const expiryMs       = BigInt(Date.now() + 30 * 24 * 60 * 60 * 1000)
   const isProcessing   = ['deploying1', 'depositing1', 'deploying2', 'depositing2', 'registering', 'sealing'].includes(step)
 
@@ -613,7 +613,7 @@ export function VaultConfigModal({ defaultStrategyType = 0, open, onClose }: Vau
                 <div className="space-y-1.5">
                   <Label>Total Deposit (DUSDC)</Label>
                   <Input
-                    type="number" min="10"
+                    type="number" min="1"
                     value={totalDeposit}
                     onChange={(e) => setTotalDeposit(e.target.value)}
                   />
@@ -839,7 +839,7 @@ export function VaultConfigModal({ defaultStrategyType = 0, open, onClose }: Vau
               <Button
                 onClick={() => setStep('config1')}
                 disabled={
-                  parseFloat(totalDeposit) < 10 ||
+                  parseFloat(totalDeposit) < 1 ||
                   (!isPublic && (!(copyFee) || parseFloat(copyFee) <= 0))
                 }
               >

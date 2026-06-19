@@ -1,114 +1,114 @@
 /**
- * GET /svi-surface — Live SVI vol surface for all active oracles (Module C).
+ * GET /svi-surface — Live SVI vol surface for active (future) oracles.
  *
- * Fetches all active oracle objects from predict-server, computes implied vol
- * at 21 log-moneyness strikes from k=-1.0 to k=+1.0 per oracle, and returns
- * a structured JSON for vol surface visualization.
- *
- * The frontend can use this data to render a 2D smile (vol vs strike) or
- * a 3D surface (vol vs strike vs time-to-expiry).
+ * Fetches active oracle objects from predict-server via the correct
+ * /oracles?status=active endpoint, filters to oracles expiring in the
+ * future, fetches SVI params for each, and returns a vol surface in the
+ * shape expected by the frontend SviSurfaceResponse type.
  *
  * Response schema:
  *   {
- *     oracles: [{
- *       oracle_id: string,
- *       expiry_iso: string,
- *       t_years: number,
- *       atm_vol_pct: number,       // ATM implied vol %
- *       skew_bps: number,          // 25-delta put-call skew in bps
- *       smile: [{ k: number, vol_pct: number, prob_call: number, spread_pct: number }],
+ *     surface: [{
+ *       expiryMs:  string,          // oracle expiry as ms string
+ *       atmVol:    number,          // ATM implied vol (fraction, e.g. 0.40)
+ *       strikes:   [{
+ *         k:      number,           // log-moneyness
+ *         prob:   number,           // binary call probability at k
+ *         spread: number,           // estimated spread (fraction)
+ *         w:      number,           // total variance w(k)
+ *       }],
  *     }],
- *     generated_at: string,
+ *     timestamp: string,
  *   }
  */
 
 import { Router } from 'express';
-import { atmVol, binaryCallProb, computeSpread, sviW } from '@sonarkk/core';
-import { env } from '../env.js';
+import {
+  atmVol as computeAtmVol,
+  binaryCallProb,
+  computeSpread,
+  sviW,
+  predictClient,
+} from '@sonarkk/core';
 
 export const sviSurfaceRouter = Router();
 
-// ── Strike grid ────────────────────────────────────────────────────────────────
+// 9 strike points from k=-0.4 to k=+0.4 (log-moneyness).
+// At k=±1.0 probabilities are trivially 100%/0%; the ±0.4 range covers
+// strikes from ~0.67× to ~1.49× spot where the smile shows real variation.
+const STRIKE_GRID_K: number[] = Array.from({ length: 9 }, (_, i) =>
+  parseFloat((-0.4 + i * 0.1).toFixed(1))
+);
 
-// 21 points from k=-1.0 to k=+1.0 (log-moneyness, e.g. -0.1 = 10% OTM put)
-const STRIKE_GRID_K: number[] = Array.from({ length: 21 }, (_, i) => -1.0 + i * 0.1);
-
-// ── Oracle type ────────────────────────────────────────────────────────────────
-
-interface ActiveOracle {
-  oracle_id: string;
-  expiry: number;      // ms
-  t_years: number;
-  svi: {
-    a: number; b: number; rho: number; m: number; sigma: number;
-  };
-}
-
-// ── Fetch active oracles ───────────────────────────────────────────────────────
-
-async function fetchActiveOracles(): Promise<ActiveOracle[]> {
-  const resp = await fetch(`${env.PREDICT_SERVER_URL}/oracles/active`, {
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!resp.ok) throw new Error(`predict-server /oracles/active returned ${resp.status}`);
-  const data = (await resp.json()) as { oracles?: ActiveOracle[] };
-  return data.oracles ?? [];
-}
-
-// ── Route ──────────────────────────────────────────────────────────────────────
+const SVI_SCALE = 1e9;
+const MAX_SURFACE_ORACLES = 10; // fetch SVI for at most the 10 nearest expiries
+const UTIL_ASSUMPTION = 0.3;    // 30% pool utilization for spread estimate
 
 sviSurfaceRouter.get('/', async (_req, res) => {
   try {
-    const oracles = await fetchActiveOracles();
+    const allActive = await predictClient.oracles({ status: 'active' });
 
-    if (oracles.length === 0) {
-      res.json({ oracles: [], generated_at: new Date().toISOString(), note: 'No active oracles' });
+    const now = Date.now();
+    const futureOracles = allActive
+      .filter(o => o.expiry > now)
+      .sort((a, b) => a.expiry - b.expiry)
+      .slice(0, MAX_SURFACE_ORACLES);
+
+    if (futureOracles.length === 0) {
+      res.json({ surface: [], timestamp: new Date().toISOString(), note: 'No active future oracles' });
       return;
     }
 
-    const surface = oracles.map(oracle => {
-      const atm = atmVol(oracle.svi, oracle.t_years);
+    // Fetch SVI params for all selected oracles in parallel.
+    const sviResults = await Promise.allSettled(
+      futureOracles.map(o => predictClient.oracleSvi(o.oracle_id, { limit: 1 }))
+    );
 
-      // Compute smile across the strike grid.
-      const smile = STRIKE_GRID_K.map(k => {
-        const w = sviW(oracle.svi, k);
-        const vol = w > 0 && oracle.t_years > 0 ? Math.sqrt(w / oracle.t_years) : atm;
-        const prob_call = binaryCallProb(oracle.svi, k);
-        const spread = computeSpread(prob_call, 0.3); // 30% utilization assumption
+    const surface: Array<{
+      expiryMs: string;
+      tYears: number;
+      atmVol: number;
+      strikes: Array<{ k: number; vol: number; prob: number; spread: number; w: number }>;
+    }> = [];
 
-        return {
-          k:            +k.toFixed(2),
-          vol_pct:      +(vol * 100).toFixed(2),
-          prob_call:    +prob_call.toFixed(4),
-          spread_pct:   +(spread * 100).toFixed(3),
-        };
+    for (let i = 0; i < futureOracles.length; i++) {
+      const oracle = futureOracles[i]!;
+      const sviResult = sviResults[i];
+      if (sviResult.status !== 'fulfilled') continue;
+      const rawSvi = sviResult.value[0];
+      if (!rawSvi) continue;
+
+      const svi = {
+        a:     rawSvi.a     / SVI_SCALE,
+        b:     rawSvi.b     / SVI_SCALE,
+        rho:   (rawSvi.rho_negative ? -1 : 1) * (rawSvi.rho   / SVI_SCALE),
+        m:     (rawSvi.m_negative   ? -1 : 1) * (rawSvi.m     / SVI_SCALE),
+        sigma: rawSvi.sigma / SVI_SCALE,
+      };
+
+      const tYears = (oracle.expiry - now) / (365.25 * 24 * 3_600_000);
+      const atm = computeAtmVol(svi, tYears);
+
+      // Skip degenerate calibrations (atm vol = 0, NaN, Infinity, or > 300%)
+      if (!isFinite(atm) || atm <= 0 || atm > 3.0) continue;
+
+      const strikes = STRIKE_GRID_K.map(k => {
+        const w = sviW(svi, k);
+        const vol = w > 0 && tYears > 0 ? Math.sqrt(w / tYears) : 0;
+        const prob = binaryCallProb(svi, k);
+        const spread = computeSpread(prob, UTIL_ASSUMPTION);
+        return { k, vol, prob, spread, w };
       });
 
-      // 25-delta skew: vol at k=-0.3 (rough OTM put proxy) minus vol at k=+0.3 (OTM call proxy).
-      const putVol  = smile.find(s => s.k === -0.3)?.vol_pct ?? atm * 100;
-      const callVol = smile.find(s => s.k === 0.3)?.vol_pct  ?? atm * 100;
-      const skew_bps = Math.round((putVol - callVol) * 100); // convert pct difference to bps
+      surface.push({
+        expiryMs: String(oracle.expiry),
+        tYears,
+        atmVol:   atm,
+        strikes,
+      });
+    }
 
-      return {
-        oracle_id:   oracle.oracle_id,
-        expiry_iso:  new Date(oracle.expiry).toISOString(),
-        t_years:     +oracle.t_years.toFixed(6),
-        t_minutes:   +((oracle.expiry - Date.now()) / 60_000).toFixed(1),
-        atm_vol_pct: +(atm * 100).toFixed(2),
-        skew_bps,
-        smile,
-      };
-    });
-
-    // Sort by t_years ascending (nearest expiry first).
-    surface.sort((a, b) => a.t_years - b.t_years);
-
-    res.json({
-      oracles: surface,
-      oracle_count: surface.length,
-      generated_at: new Date().toISOString(),
-      note: 'Vol computed from live SVI parameters. Spread uses assumed 30% pool utilization. Skew = OTM put vol minus OTM call vol at k=±0.3.',
-    });
+    res.json({ surface, timestamp: new Date().toISOString() });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }

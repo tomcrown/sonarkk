@@ -58,10 +58,19 @@ public(package) fun new(
 }
 
 /// Assert cap is valid: targets the right portfolio, is not expired, has budget left.
+/// Use for capital-deployment actions (take_for_supply, take_for_bettor, take_for_bet).
 public(package) fun assert_valid(cap: &PolicyCap, portfolio_id: ID, clock: &Clock) {
     assert!(cap.portfolio_id == portfolio_id, EWrongPortfolio);
     assert!(clock.timestamp_ms() < cap.expiry_ms, ECapExpired);
     assert!(cap.budget_remaining > 0, EBudgetExhausted);
+}
+
+/// Assert cap is authorized: targets the right portfolio and is not expired.
+/// Does NOT check budget_remaining — use for credit/return operations (store_lp,
+/// take_lp) where the keeper is acting on already-deployed capital, not deploying new funds.
+public(package) fun assert_authorized(cap: &PolicyCap, portfolio_id: ID, clock: &Clock) {
+    assert!(cap.portfolio_id == portfolio_id, EWrongPortfolio);
+    assert!(clock.timestamp_ms() < cap.expiry_ms, ECapExpired);
 }
 
 /// Consume budget. Called on every keeper fund-deployment action.

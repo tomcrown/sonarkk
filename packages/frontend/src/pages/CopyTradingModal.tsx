@@ -421,7 +421,7 @@ export function CopyTradingModal({ entry, open, onClose }: CopyTradingModalProps
               <div className="space-y-1.5">
                 <Label>Your deposit (DUSDC)</Label>
                 <Input
-                  type="number" min="10"
+                  type="number" min="1"
                   value={depositAmount}
                   onChange={(e) => setDepositAmount(e.target.value)}
                   placeholder="200"

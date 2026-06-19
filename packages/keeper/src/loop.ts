@@ -50,6 +50,7 @@ import { checkPolicyCap } from './chain/policy.js';
 import { settleBinaryPositions, settleRangePositions } from './chain/settle.js';
 import {
   executeSupplyCycle,
+  executeRedeemLp,
   executeRangeCycle,
   executeBinaryCycle,
   executePrincipalProtectedCycle,
@@ -317,7 +318,27 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
     }
   }
 
-  // Re-read chain state after settlement.
+  // ── (d2) REDEEM LP → LIQUID ───────────────────────────────────────────────
+  // For house strategies, redeem all PLP back to liquid DUSDC before sizing and
+  // re-deploying. This ensures quote_balance is fully liquid so user withdrawals
+  // always succeed immediately after a cycle completes.
+  // Bettor strategies hold positions in a PredictManager, not PLP — skip for them.
+  const isHouseStrategy = ['PLP_SUPPLIER', 'HEDGED_PLP', 'SMART_VAULT', 'PRINCIPAL_PROTECTED'].includes(portfolio.strategy);
+  if (isHouseStrategy && chainState.lp_balance_raw > 0n) {
+    try {
+      const redeemDigest = await executeRedeemLp(
+        client, keypair, portfolioId, policyCapId, chainState.lp_balance_raw,
+      );
+      notifyOnAction({ kind: 'nav_update', portfolioId: portfolio.id, oracleId: oracle_id,
+        expiryMs: expiryBigInt, txDigest: redeemDigest,
+        detail: `lp_redeemed: ${chainState.lp_balance_raw}` });
+    } catch (err) {
+      log.warn({ portfolioId, lpBalanceRaw: chainState.lp_balance_raw.toString(), err },
+        'LP redemption failed — proceeding with current liquid balance');
+    }
+  }
+
+  // Re-read chain state after settlement and LP redemption.
   chainState = await readPortfolioChainState(client, portfolioId, keeperAddress);
 
   // ── (e) ENTRY GUARD ───────────────────────────────────────────────────────

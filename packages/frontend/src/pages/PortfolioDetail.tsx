@@ -243,13 +243,44 @@ function WithdrawModal({
     if (!account || !chainConfig?.sonarkPackage) return
     if (shares.length === 0) return
 
-    const PKG   = chainConfig.sonarkPackage
-    const DUSDC = chainConfig.dusdcType
+    const PKG          = chainConfig.sonarkPackage
+    const DUSDC        = chainConfig.dusdcType
+    const PREDICT_OBJ  = chainConfig.predictObject
+    const PREDICT_PKG  = chainConfig.predictPackage
+    const CLOCK        = chainConfig.clockId
+    const PLP_TYPE     = `${PREDICT_PKG}::plp::PLP`
 
     setStep('withdrawing')
     try {
       const tx = new Transaction()
       const coins: ReturnType<typeof tx.moveCall>[] = []
+
+      // If the vault has PLP deployed, redeem it first so quote_balance covers
+      // the full withdrawal.  Steps 1-3 are the permissionless hot-potato path:
+      //   1. take_lp_to_redeem → (Coin<PLP>, receipt)
+      //   2. predict::withdraw  → Coin<DUSDC>
+      //   3. return_redeemed_quote (consumes the hot potato)
+      if (!hasEnoughLiquidity) {
+        const redeemResult = tx.moveCall({
+          target: `${PKG}::portfolio::take_lp_to_redeem`,
+          typeArguments: [DUSDC, PLP_TYPE],
+          arguments: [tx.object(portfolioObjectId)],
+        })
+        const plpCoin = redeemResult[0]
+        const receipt = redeemResult[1]
+
+        const dusdcFromPlp = tx.moveCall({
+          target: `${PREDICT_PKG}::predict::withdraw`,
+          typeArguments: [DUSDC],
+          arguments: [tx.object(PREDICT_OBJ), plpCoin, tx.object(CLOCK)],
+        })
+
+        tx.moveCall({
+          target: `${PKG}::portfolio::return_redeemed_quote`,
+          typeArguments: [DUSDC],
+          arguments: [tx.object(portfolioObjectId), dusdcFromPlp, receipt],
+        })
+      }
 
       for (const share of shares) {
         const coin = tx.moveCall({
@@ -263,7 +294,6 @@ function WithdrawModal({
         coins.push(coin)
       }
 
-      // Transfer all redeemed DUSDC coins to the user
       tx.transferObjects(coins, account.address)
 
       const result = await signAndExecute({ transaction: tx })
@@ -273,7 +303,7 @@ function WithdrawModal({
       setErrorMsg(err instanceof Error ? err.message : String(err))
       setStep('error')
     }
-  }, [account, chainConfig, shares, portfolioObjectId, signAndExecute])
+  }, [account, chainConfig, shares, portfolioObjectId, signAndExecute, hasEnoughLiquidity])
 
   const dusdcFormatted = (Number(estimatedDusdc) / Number(DUSDC_SCALE)).toFixed(6)
 
@@ -333,20 +363,10 @@ function WithdrawModal({
                     </div>
                   </div>
                   {!hasEnoughLiquidity ? (
-                    <div
-                      className="flex items-start gap-2 rounded-lg px-4 py-3"
-                      style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}
-                    >
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'var(--status-yellow, #f59e0b)' }} />
-                      <div className="text-xs space-y-1" style={{ color: 'var(--ink-secondary)' }}>
-                        <p className="font-medium">Funds partially deployed in PLP</p>
-                        <p>
-                          ~{(Number(inPlpRaw) / 1e6).toFixed(2)} DUSDC is in active PLP positions.
-                          The keeper will redeem them automatically on the next cycle.
-                          Please try again in a few minutes.
-                        </p>
-                      </div>
-                    </div>
+                    <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>
+                      ~{(Number(inPlpRaw) / 1e6).toFixed(2)} DUSDC is in active PLP positions.
+                      The transaction will redeem them and withdraw in one step.
+                    </p>
                   ) : (
                     <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>
                       All {shares.length} PortfolioShare object{shares.length !== 1 ? 's' : ''} will be burned in one transaction.
@@ -433,18 +453,16 @@ function WithdrawModal({
           ) : step === 'preview' ? (
             <>
               <Button variant="ghost" onClick={() => handleOpenChange(false)}>Cancel</Button>
-              {!hasEnoughLiquidity ? (
-                <Button onClick={() => { setQuoteBalanceRaw(null); void fetchShares() }} variant="outline">
-                  Refresh
-                </Button>
-              ) : (
-                <Button
-                  onClick={handleWithdraw}
-                  disabled={loadingShares || shares.length === 0 || !account}
-                >
-                  {!account ? 'Connect wallet' : `Withdraw ${(Number(totalShareUnits) / 1e6).toFixed(2)} shares`}
-                </Button>
-              )}
+              <Button
+                onClick={handleWithdraw}
+                disabled={loadingShares || shares.length === 0 || !account}
+              >
+                {!account
+                  ? 'Connect wallet'
+                  : !hasEnoughLiquidity
+                    ? `Redeem PLP & Withdraw`
+                    : `Withdraw ${(Number(totalShareUnits) / 1e6).toFixed(2)} shares`}
+              </Button>
             </>
           ) : null /* withdrawing — no buttons */}
         </DialogFooter>

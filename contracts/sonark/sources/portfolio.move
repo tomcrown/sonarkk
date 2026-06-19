@@ -522,7 +522,8 @@ public fun store_lp<Q, Lp>(
     policy: &PolicyCap,
     clock: &Clock,
 ) {
-    policy::assert_valid(policy, object::id(portfolio), clock);
+    // Credit operation: verify identity + expiry only, no budget consumed.
+    policy::assert_authorized(policy, object::id(portfolio), clock);
     let key = type_name::with_defining_ids<Lp>();
     let incoming = lp_coin.into_balance();
     if (bag::contains(&portfolio.lp_balances, key)) {
@@ -544,7 +545,8 @@ public fun take_lp<Q, Lp>(
     clock: &Clock,
     ctx: &mut TxContext,
 ): Coin<Lp> {
-    policy::assert_valid(policy, object::id(portfolio), clock);
+    // Taking LP to redeem already-deployed capital; no budget consumed.
+    policy::assert_authorized(policy, object::id(portfolio), clock);
     let key = type_name::with_defining_ids<Lp>();
     assert!(bag::contains(&portfolio.lp_balances, key), EInsufficientLpBalance);
     // Remove the entire balance, split off the requested amount, put remainder back.
@@ -563,6 +565,53 @@ public fun take_lp<Q, Lp>(
 /// No PolicyCap required — crediting the portfolio is always additive and safe.
 public fun store_quote<Q>(portfolio: &mut SonarkPortfolio<Q>, coin: Coin<Q>) {
     balance::join(&mut portfolio.quote_balance, coin.into_balance());
+}
+
+// === Permissionless LP Redemption ===
+
+/// Hot potato — no abilities (cannot be stored, copied, or dropped).
+/// MUST be destroyed by calling return_redeemed_quote in the same PTB.
+public struct LpRedeemReceipt<phantom Q> {
+    portfolio_id: ID,
+}
+
+/// Take ALL LP tokens of type Lp from this portfolio without requiring PolicyCap.
+///
+/// Returns the LP coin and an LpRedeemReceipt hot potato. The receipt has no
+/// abilities, so the caller MUST call return_redeemed_quote<Q> in the same PTB
+/// or the transaction reverts, making LP theft impossible.
+///
+/// Intended PTB sequence (user withdrawal when quote_balance < owed amount):
+///   1. take_lp_to_redeem<DUSDC, PLP>(portfolio, ctx)             → (Coin<PLP>, receipt)
+///   2. predict::withdraw<DUSDC>(predict_state, plp_coin, clock)  → Coin<DUSDC>
+///   3. return_redeemed_quote<DUSDC>(portfolio, dusdc_coin, receipt)
+///   4. portfolio::withdraw<DUSDC>(portfolio, share_object)        → Coin<DUSDC>
+///
+/// The keeper uses the PolicyCap-gated take_lp for its own cycle management;
+/// this function is the user-facing escape hatch that satisfies keeper-independent exit.
+public fun take_lp_to_redeem<Q, Lp>(
+    portfolio: &mut SonarkPortfolio<Q>,
+    ctx: &mut TxContext,
+): (Coin<Lp>, LpRedeemReceipt<Q>) {
+    let key = type_name::with_defining_ids<Lp>();
+    assert!(bag::contains(&portfolio.lp_balances, key), EInsufficientLpBalance);
+    let full = bag::remove<TypeName, Balance<Lp>>(&mut portfolio.lp_balances, key);
+    let lp_coin = coin::from_balance(full, ctx);
+    let receipt = LpRedeemReceipt<Q> { portfolio_id: object::id(portfolio) };
+    (lp_coin, receipt)
+}
+
+/// Consume the LpRedeemReceipt and credit redeemed DUSDC back into the portfolio.
+/// The hot potato enforces that this is always called in the same PTB as take_lp_to_redeem.
+/// The receipt must belong to this portfolio — wrong-portfolio is rejected on-chain.
+public fun return_redeemed_quote<Q>(
+    portfolio: &mut SonarkPortfolio<Q>,
+    coin: Coin<Q>,
+    receipt: LpRedeemReceipt<Q>,
+) {
+    let LpRedeemReceipt { portfolio_id } = receipt;
+    assert!(portfolio_id == object::id(portfolio), EWrongPortfolio);
+    store_quote(portfolio, coin);
 }
 
 // === Keeper: Capital Deployment — Bettor Strategies ===
@@ -1135,4 +1184,9 @@ public fun destroy_for_testing<Q>(portfolio: SonarkPortfolio<Q>) {
 public fun destroy_share_for_testing(share: PortfolioShare) {
     let PortfolioShare { id, portfolio_id: _, shares: _ } = share;
     id.delete();
+}
+
+#[test_only]
+public fun destroy_receipt_for_testing<Q>(receipt: LpRedeemReceipt<Q>) {
+    let LpRedeemReceipt { portfolio_id: _ } = receipt;
 }

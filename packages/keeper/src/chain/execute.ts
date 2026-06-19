@@ -186,6 +186,73 @@ export async function executeSupplyCycle(
   return { tx_digest: digest, nav_pushed: navPerShare, supply_amount_raw: supplyAmount };
 }
 
+// ── LP Redemption (keeper-side, runs before supply each cycle) ────────────────
+
+/**
+ * Redeem all PLP held in the portfolio back to liquid DUSDC.
+ *
+ * Called by the keeper at the start of every house-strategy cycle BEFORE sizing
+ * and supply, ensuring quote_balance is fully liquid. This guarantees that user
+ * withdrawals can succeed immediately after the cycle settles.
+ *
+ * PTB flow:
+ *   take_lp<DUSDC, PLP>(portfolio, lp_balance, policy, clock) → Coin<PLP>
+ *   predict::withdraw<DUSDC>(predict_obj, plp_coin, clock)    → Coin<DUSDC>
+ *   store_quote<DUSDC>(portfolio, dusdc_coin)
+ */
+export async function executeRedeemLp(
+  client: SuiGrpcClient,
+  keypair: Ed25519Keypair,
+  portfolioId: string,
+  policyCapId: string,
+  lpBalanceRaw: bigint,
+): Promise<string> {
+  const tx = new Transaction();
+
+  const plpCoin = tx.moveCall({
+    target: `${SONARK_PKG()}::portfolio::take_lp`,
+    typeArguments: [DUSDC, PLP_TYPE],
+    arguments: [
+      tx.object(portfolioId),
+      tx.pure.u64(lpBalanceRaw),
+      tx.object(policyCapId),
+      tx.object(CLOCK_ID),
+    ],
+  });
+
+  const dusdcCoin = tx.moveCall({
+    target: `${PREDICT_PKG()}::predict::withdraw`,
+    typeArguments: [DUSDC],
+    arguments: [tx.object(PREDICT_OBJ()), plpCoin, tx.object(CLOCK_ID)],
+  });
+
+  tx.moveCall({
+    target: `${SONARK_PKG()}::portfolio::store_quote`,
+    typeArguments: [DUSDC],
+    arguments: [tx.object(portfolioId), dusdcCoin],
+  });
+
+  const result = await withRetry(
+    () => client.core.signAndExecuteTransaction({
+      transaction: tx,
+      signer: keypair,
+      include: { effects: true },
+    }),
+    `executeRedeemLp(${portfolioId.slice(0, 8)}...)`,
+  );
+
+  if (result.$kind === 'FailedTransaction') {
+    throw new Error(`LP redeem TX failed: ${JSON.stringify(result.FailedTransaction?.status)}`);
+  }
+
+  const digest = result.Transaction?.digest ?? '';
+  log.info(
+    { digest, portfolioId, lpBalanceRaw: lpBalanceRaw.toString(), explorer: `${EXPLORER_URL}/${digest}` },
+    'LP redeemed to liquid DUSDC',
+  );
+  return digest;
+}
+
 // ── Bettor strategies ⑤⑥ (mint_range) ────────────────────────────────────────
 
 /**

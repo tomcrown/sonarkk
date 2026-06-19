@@ -72,8 +72,15 @@ async function buildMarketContext(): Promise<MarketContext | null> {
 
   if (activeOracles.length === 0) return null;
 
+  // Filter to oracles that haven't expired yet. The API marks many historical
+  // oracles as "active" even after their expiry — picking the true soonest
+  // expiring-in-the-future oracle gives the most relevant market context.
+  const now = Date.now();
+  const futureOracles = activeOracles.filter(o => o.expiry > now);
+  if (futureOracles.length === 0) return null;
+
   // Pick the oracle expiring soonest (most relevant for current market state).
-  const oracle = activeOracles.sort((a, b) => a.expiry - b.expiry)[0]!;
+  const oracle = futureOracles.sort((a, b) => a.expiry - b.expiry)[0]!;
 
   // Fetch SVI params and spot price for that oracle in parallel.
   const [sviResult, priceResult] = await Promise.allSettled([
@@ -115,7 +122,7 @@ async function buildMarketContext(): Promise<MarketContext | null> {
     atm_vol: atm,
     regime,
     spread_at_atm: spread,
-    active_oracle_count: activeOracles.length,
+    active_oracle_count: futureOracles.length,
     expiry_in_minutes: expiryInMin,
     btc_price_usd: btcPriceUsd,
   };

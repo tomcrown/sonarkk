@@ -412,3 +412,98 @@ fun test_store_quote_no_policy_needed() {
     portfolio::destroy_for_testing(portfolio);
     cap.revoke();
 }
+
+// ── take_lp_to_redeem / return_redeemed_quote ─────────────────────────────────
+
+/// Happy path: user redeems all LP and returns equivalent quote — portfolio is
+/// fully liquid again and the user can call withdraw without abort code 5.
+#[test]
+fun test_take_lp_to_redeem_and_return() {
+    let mut ctx = tx_context::dummy();
+    let clock = clock::create_for_testing(&mut ctx);
+    let (mut portfolio, cap) = make_portfolio(&mut ctx, &clock);
+
+    // Deposit 1 TESTQ so the portfolio has shares outstanding.
+    let share = portfolio.deposit(
+        coin::mint_for_testing<TESTQ>(1_000_000, &mut ctx), &clock, &mut ctx,
+    );
+    assert!(portfolio.quote_balance() == 1_000_000);
+
+    // Keeper stores 500k TESTLP into the portfolio (simulates PLP supply cycle).
+    portfolio.store_lp<TESTQ, TESTLP>(
+        coin::mint_for_testing<TESTLP>(500_000, &mut ctx), &cap, &clock,
+    );
+    assert!(portfolio.lp_balance<TESTQ, TESTLP>() == 500_000);
+
+    // User calls take_lp_to_redeem — no PolicyCap required.
+    // This models the frontend step 1: take_lp_to_redeem → (Coin<PLP>, receipt).
+    let (lp_coin, receipt) = portfolio.take_lp_to_redeem<TESTQ, TESTLP>(&mut ctx);
+    assert!(lp_coin.value() == 500_000);
+    assert!(portfolio.lp_balance<TESTQ, TESTLP>() == 0);
+
+    // Simulate predict::withdraw: burn the LP and mint equivalent TESTQ back.
+    // In the real PTB this is predict::withdraw<DUSDC>(predict_state, lp_coin, clock).
+    coin::burn_for_testing(lp_coin);
+    let redeemed_quote = coin::mint_for_testing<TESTQ>(500_000, &mut ctx);
+
+    // User calls return_redeemed_quote — consumes the hot potato, credits portfolio.
+    portfolio.return_redeemed_quote(redeemed_quote, receipt);
+    // quote_balance = original 1M (deposit) + 500k (redeemed LP).
+    assert!(portfolio.quote_balance() == 1_500_000);
+
+    // Withdraw now succeeds: NAV is 1:1, share entitlement = 1M TESTQ.
+    let returned = portfolio.withdraw(share, &mut ctx);
+    assert!(returned.value() == 1_000_000);
+
+    coin::burn_for_testing(returned);
+    clock.destroy_for_testing();
+    portfolio::destroy_for_testing(portfolio);
+    cap.revoke();
+}
+
+/// Abort if there is no LP of the requested type in the portfolio.
+#[test, expected_failure(abort_code = sonark::portfolio::EInsufficientLpBalance)]
+fun test_take_lp_to_redeem_no_lp_aborts() {
+    let mut ctx = tx_context::dummy();
+    let clock = clock::create_for_testing(&mut ctx);
+    let (mut portfolio, cap) = make_portfolio(&mut ctx, &clock);
+
+    // No LP stored — should abort.
+    let (lp_coin, receipt) = portfolio.take_lp_to_redeem<TESTQ, TESTLP>(&mut ctx);
+
+    // unreachable — satisfies type checker
+    coin::burn_for_testing(lp_coin);
+    portfolio::destroy_receipt_for_testing(receipt);
+    clock.destroy_for_testing();
+    portfolio::destroy_for_testing(portfolio);
+    cap.revoke();
+}
+
+/// Abort if return_redeemed_quote is called with a receipt from a different portfolio.
+#[test, expected_failure(abort_code = sonark::portfolio::EWrongPortfolio)]
+fun test_return_redeemed_quote_wrong_portfolio_aborts() {
+    let mut ctx = tx_context::dummy();
+    let clock = clock::create_for_testing(&mut ctx);
+    let (mut portfolio_a, cap_a) = make_portfolio(&mut ctx, &clock);
+    let (mut portfolio_b, cap_b) = make_portfolio(&mut ctx, &clock);
+
+    // Store LP in portfolio A.
+    portfolio_a.store_lp<TESTQ, TESTLP>(
+        coin::mint_for_testing<TESTLP>(500_000, &mut ctx), &cap_a, &clock,
+    );
+
+    // Take LP from portfolio A — receipt is bound to portfolio A's ID.
+    let (lp_coin, receipt_a) = portfolio_a.take_lp_to_redeem<TESTQ, TESTLP>(&mut ctx);
+
+    // Attempt to return quote to portfolio B using portfolio A's receipt — must abort.
+    let dusdc = coin::mint_for_testing<TESTQ>(500_000, &mut ctx);
+    portfolio_b.return_redeemed_quote(dusdc, receipt_a); // aborts here
+
+    // unreachable
+    coin::burn_for_testing(lp_coin);
+    clock.destroy_for_testing();
+    portfolio::destroy_for_testing(portfolio_a);
+    portfolio::destroy_for_testing(portfolio_b);
+    cap_a.revoke();
+    cap_b.revoke();
+}

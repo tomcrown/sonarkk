@@ -89,7 +89,7 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
 
     const userAddress = account.address
     const depositRaw = toRaw(config.initialDeposit)
-    const budgetCapRaw = depositRaw / 2n   // 50% of deposit per cycle max
+    const budgetCapRaw = depositRaw * 500n  // ~2000 cycles before refresh needed
     const expiryMs = BigInt(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
 
     const PKG   = chainConfig.sonarkPackage
@@ -255,7 +255,7 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
                   <Input
                     id="deploy-deposit"
                     type="number"
-                    min="10"
+                    min="1"
                     value={config.initialDeposit}
                     onChange={(e) => setConfig((c) => ({ ...c, initialDeposit: e.target.value }))}
                   />
@@ -517,7 +517,7 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
           ) : step === 'config' ? (
             <>
               <Button variant="ghost" onClick={handleClose}>Cancel</Button>
-              <Button onClick={() => setStep('confirm')} disabled={!config.initialDeposit || parseFloat(config.initialDeposit) < 10}>
+              <Button onClick={() => setStep('confirm')} disabled={!config.initialDeposit || parseFloat(config.initialDeposit) < 1}>
                 Review <ArrowRight className="w-3.5 h-3.5" />
               </Button>
             </>

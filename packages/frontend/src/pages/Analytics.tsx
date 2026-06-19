@@ -498,9 +498,9 @@ export default function Analytics() {
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <div className="text-[10px] tracking-[0.15em] text-accent mb-1">SVI VOL SURFACE</div>
-                    <h3 className="text-sm font-semibold text-foreground">Implied vol heatmap — Strike × Expiry</h3>
+                    <h3 className="text-sm font-semibold text-foreground">Vol term structure — Active expiries</h3>
                     <p className="text-xs text-text-dim mt-1">
-                      Each cell shows the probability that BTC finishes above that strike. Darker = higher probability.
+                      ATM implied vol and house spread income for each active oracle, sorted by time to expiry. Higher ATM vol = wider spread = more income per cycle for house strategies.
                     </p>
                   </div>
                   <p className="text-xs text-text-dim shrink-0 ml-4">

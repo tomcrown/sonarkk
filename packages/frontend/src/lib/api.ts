@@ -349,6 +349,7 @@ export interface BacktestResult {
 
 export interface SviStrike {
   k: number
+  vol: number   // implied vol at this strike (fraction, e.g. 0.40)
   prob: number
   spread: number
   w: number
@@ -356,6 +357,7 @@ export interface SviStrike {
 
 export interface SviExpiry {
   expiryMs: string
+  tYears: number
   atmVol: number
   strikes: SviStrike[]
 }
