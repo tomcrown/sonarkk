@@ -37,7 +37,7 @@ import { cn } from '@/lib/cn'
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const DUSDC_DECIMALS = 6
-const ALL_STRATEGY_TYPES = [0, 1, 2, 3, 4, 5, 6]
+const ALL_STRATEGY_TYPES = [0, 1, 2, 3, 4, 5, 6, 7]
 const ALLOCATION_PRESETS = [
   { label: '100%', bps: 10000 },
   { label: '70 / 30', bps: 7000 },
@@ -48,11 +48,13 @@ const ALLOCATION_PRESETS = [
 // strategy number → DB string key
 const STRATEGY_ID: Record<number, string> = {
   0: 'PLP_SUPPLIER', 1: 'HEDGED_PLP', 2: 'SMART_VAULT', 3: 'PRINCIPAL_PROTECTED',
-  4: 'RANGE_ROLL',   5: 'VOL_TARGETED_RANGE', 6: 'CROSS_VENUE_ARB',
+  4: 'RANGE_ROLL',   5: 'VOL_TARGETED_RANGE', 6: 'CROSS_VENUE_ARB', 7: 'MARGIN_LOOP',
 }
 
 function toRaw(dusdc: string): bigint {
-  return BigInt(Math.round(parseFloat(dusdc) * 10 ** DUSDC_DECIMALS))
+  const n = parseFloat(dusdc)
+  if (!isFinite(n) || n < 0) return 0n
+  return BigInt(Math.round(n * 10 ** DUSDC_DECIMALS))
 }
 
 // ── Slot config type ──────────────────────────────────────────────────────────

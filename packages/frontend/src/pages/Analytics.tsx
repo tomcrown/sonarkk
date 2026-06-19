@@ -301,7 +301,7 @@ export default function Analytics() {
               ? `$${btcPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
               : '—'
           }
-          sub="Live price from Binance"
+          sub="Live price"
           icon={Bitcoin}
           loading={ctxLoading}
         />

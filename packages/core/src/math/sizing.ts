@@ -34,6 +34,14 @@ export const VOL_ARB_MAX_FRACTION = 0.10;
 /** Principal-Protected: fraction of accumulated yield to bet per cycle. */
 export const PP_BET_FRACTION = 0.80;
 
+/**
+ * Minimum supply/bet size in raw DUSDC units (0.01 DUSDC).
+ * predict::supply aborts if the amount is below the protocol floor.
+ * Sized conservatively above the observed floor (~100 raw) to avoid
+ * wasting gas on cycles where almost all capital is already deployed.
+ */
+export const MIN_DEPLOY_RAW = 10_000n;
+
 // ── Result type ────────────────────────────────────────────────────────────
 
 export interface SizingResult {
@@ -94,6 +102,9 @@ export function sizePlpSupplier(
   }
   const ideal_raw = BigInt(Math.floor(Number(available_balance_raw) * util_target));
   const result = applyBudgetCap(ideal_raw, policy_budget_raw);
+  if (result.size_raw < MIN_DEPLOY_RAW) {
+    return { size_raw: 0n, ideal_size_raw: ideal_raw, is_budget_capped: false, utilization_fraction: 0, skip_reason: 'supply amount below minimum — most capital already deployed' };
+  }
   result.utilization_fraction = Number(result.size_raw) / Number(available_balance_raw);
   return result;
 }

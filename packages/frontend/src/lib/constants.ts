@@ -17,10 +17,10 @@ export const STRATEGY_DESCRIPTIONS: Record<number, string> = {
   4: 'Bet that BTC stays in range. Auto-rolls each expiry. Short-volatility view.',
   5: 'Range-rolling with position sizing tied to SVI-implied vol. Reduces tail losses vs raw Range Roll.',
   6: 'Fires when Predict prices more vol than Hyperliquid reference. Sell-vol mode only.',
-  7: 'Three-protocol composability demo: lending + margin + Predict. Admin/demo only.',
+  7: 'Leveraged range strategy. Deposits collateral, borrows additional DUSDC, deploys borrowed amount into a range bet on Predict.',
 }
 
-export const BETTOR_STRATEGIES = new Set([4, 5, 6])
+export const BETTOR_STRATEGIES = new Set([4, 5, 6, 7])
 export const HOUSE_STRATEGIES = new Set([0, 1, 2, 3])
 
 export const STRATEGY_RISK_LABELS: Record<number, string> = {
@@ -31,7 +31,7 @@ export const STRATEGY_RISK_LABELS: Record<number, string> = {
   4: 'Med — short vol',
   5: 'Med — short vol',
   6: 'High — short vol',
-  7: 'Demo only',
+  7: 'High — leveraged short vol',
 }
 
 export const STRATEGY_COLORS: Record<number, string> = {
@@ -42,7 +42,7 @@ export const STRATEGY_COLORS: Record<number, string> = {
   4: '#E8A627',
   5: '#E8A627',
   6: '#F04438',
-  7: '#58586A',
+  7: '#F97316',
 }
 
 export const KEEPER_STATUS_LABELS: Record<string, string> = {

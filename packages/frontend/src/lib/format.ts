@@ -54,15 +54,15 @@ export function formatNumber(value: number, decimals = 2): string {
   })
 }
 
-/** Format unix timestamp ms to local date string */
+/** Format unix timestamp ms or ISO string to local date string */
 export function formatDate(ms: number | string): string {
-  const d = new Date(typeof ms === 'string' ? parseInt(ms) : ms)
+  const d = new Date(ms)
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-/** Format unix timestamp ms to local datetime */
+/** Format unix timestamp ms or ISO string to local datetime */
 export function formatDateTime(ms: number | string): string {
-  const d = new Date(typeof ms === 'string' ? parseInt(ms) : ms)
+  const d = new Date(ms)
   return d.toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',

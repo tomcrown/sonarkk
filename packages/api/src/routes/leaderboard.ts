@@ -36,14 +36,14 @@ leaderboardRouter.get('/', async (req, res) => {
       take: limit,
       include: {
         vaultConfig: {
-          select: {
-            id: true,
-            name: true,
-            allocations: true,
-            isPublic: true,
-            creatorAddress: true,
-            sealBlobId: true,
-            createdAt: true,
+          include: {
+            portfolios: {
+              where: { isActive: true },
+              select: {
+                totalDepositedRaw: true,
+                _count: { select: { cycles: true } },
+              },
+            },
           },
         },
       },
@@ -53,6 +53,20 @@ leaderboardRouter.get('/', async (req, res) => {
       let allocations: unknown[] = [];
       try { allocations = JSON.parse(e.vaultConfig.allocations) as unknown[]; } catch { /* ignore */ }
 
+      // Use job-computed TVL if available, otherwise fall back to sum of portfolio deposits
+      const depositSum = e.vaultConfig.portfolios.reduce(
+        (sum: bigint, p: { totalDepositedRaw: bigint }) => sum + p.totalDepositedRaw, 0n
+      );
+      const tvlRaw = (e.combinedTvlRaw != null && e.combinedTvlRaw > 0n)
+        ? e.combinedTvlRaw
+        : depositSum;
+
+      // Use job-computed cycle count if available, otherwise sum from portfolios
+      const portfolioCycleCount = e.vaultConfig.portfolios.reduce(
+        (sum: number, p: { _count: { cycles: number } }) => sum + p._count.cycles, 0
+      );
+      const totalCycles = e.totalCycles > 0 ? e.totalCycles : portfolioCycleCount;
+
       return {
         rank:              e.rank,
         vault_config_id:   e.vaultConfigId,
@@ -61,11 +75,11 @@ leaderboardRouter.get('/', async (req, res) => {
         is_public:         e.vaultConfig.isPublic,
         seal_blob_id:      e.vaultConfig.sealBlobId ?? null,
         allocations,
-        combined_tvl_dusdc: e.combinedTvlRaw != null ? (Number(e.combinedTvlRaw) / 1e6).toFixed(6) : null,
+        combined_tvl_dusdc: (Number(tvlRaw) / 1e6).toFixed(6),
         total_return_pct:  e.totalReturnPct,
         rolling_apy_pct:   e.rollingApyPct,
         apy_caveat:        e.rollingApyPct != null ? CAVEAT : null,
-        total_cycles:      e.totalCycles,
+        total_cycles:      totalCycles,
         successful_cycles: e.successfulCycles,
         copier_count:      e.copierCount,
         created_at:        e.vaultConfig.createdAt.toISOString(),

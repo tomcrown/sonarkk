@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft, Settings, TrendingUp, Activity, Clock, DollarSign,
-  LogOut, CheckCircle, Loader, AlertCircle, ExternalLink, Pause, Play, RefreshCw, type LucideIcon,
+  LogOut, LogIn, CheckCircle, Loader, AlertCircle, ExternalLink, Pause, Play, RefreshCw, type LucideIcon,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from '@mysten/dapp-kit'
@@ -86,7 +86,7 @@ type WithdrawStep = 'preview' | 'withdrawing' | 'done' | 'error'
 
 interface PortfolioShareObject {
   objectId: string
-  navPerShare: bigint
+  sharesQuantity: bigint  // the u64 'shares' field inside the Move PortfolioShare object
 }
 
 function WithdrawModal({
@@ -105,6 +105,7 @@ function WithdrawModal({
   const [loadingShares, setLoadingShares] = useState(false)
   const [txDigest, setTxDigest] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+  const [quoteBalanceRaw, setQuoteBalanceRaw] = useState<bigint | null>(null)
 
   const account = useCurrentAccount()
   const suiClient = useSuiClient()
@@ -115,32 +116,86 @@ function WithdrawModal({
   const NAV_SCALE = 1_000_000_000n
   const DUSDC_SCALE = 1_000_000n
 
-  // Fetch PortfolioShare objects when the modal opens
+  // Fetch PortfolioShare objects and the portfolio's on-chain liquid balance.
+  // portfolio_id is a Move ID (wrapper around address) — RPC may return it as a plain
+  // hex string OR as { bytes: "0x..." } depending on the node version. Handle both.
   const fetchShares = useCallback(async () => {
     if (!account || !chainConfig?.sonarkPackage) return
     setLoadingShares(true)
+    setQuoteBalanceRaw(null)
     try {
-      const result = await suiClient.getOwnedObjects({
-        owner: account.address,
-        filter: { StructType: `${chainConfig.sonarkPackage}::portfolio::PortfolioShare` },
-        options: { showContent: true },
-      })
+      const PKG = chainConfig.sonarkPackage
+      const SHARE_TYPE = `${PKG}::portfolio::PortfolioShare`
 
-      type MoveField = { type: string; fields?: Record<string, string> }
-      type MoveContent = { dataType: string; fields?: Record<string, MoveField | string> }
+      // Read portfolio's on-chain quote_balance (liquid DUSDC) in parallel with share lookup.
+      const [portfolioObj, primaryResult] = await Promise.all([
+        suiClient.getObject({ id: portfolioObjectId, options: { showContent: true } }),
+        suiClient.getOwnedObjects({
+          owner: account.address,
+          filter: { StructType: SHARE_TYPE },
+          options: { showContent: true, showType: true },
+        }),
+      ])
+
+      // Parse quote_balance from portfolio Move object fields.
+      // Balance<Q> is stored as { fields: { value: "..." } } in the RPC response.
+      const portContent = portfolioObj.data?.content
+      if (portContent && 'fields' in portContent) {
+        const portFields = (portContent as { fields?: Record<string, unknown> }).fields
+        const qb = portFields?.['quote_balance']
+        if (qb != null && typeof qb === 'object' && 'fields' in (qb as Record<string, unknown>)) {
+          const balFields = (qb as { fields: Record<string, unknown> }).fields
+          const val = balFields['value']
+          if (val != null) setQuoteBalanceRaw(BigInt(String(val)))
+        } else if (qb != null) {
+          // Some RPC versions may unwrap the value directly
+          setQuoteBalanceRaw(BigInt(String(qb)))
+        }
+      }
+
+      // Primary: exact type filter.
+      let items = primaryResult.data
+
+      // Fallback 1: package-level filter
+      if (items.length === 0) {
+        const pkgResult = await suiClient.getOwnedObjects({
+          owner: account.address,
+          filter: { Package: PKG },
+          options: { showContent: true, showType: true },
+        })
+        items = pkgResult.data.filter(item =>
+          (item.data?.type ?? '').includes('::portfolio::PortfolioShare')
+        )
+      }
+
+      // Fallback 2: scan all owned objects — catches any package ID mismatch
+      if (items.length === 0) {
+        const allResult = await suiClient.getOwnedObjects({
+          owner: account.address,
+          options: { showContent: true, showType: true },
+        })
+        items = allResult.data.filter(item =>
+          (item.data?.type ?? '').includes('::portfolio::PortfolioShare')
+        )
+      }
 
       const matched: PortfolioShareObject[] = []
-      for (const item of result.data) {
-        const content = item.data?.content as MoveContent | undefined
-        if (!content || content.dataType !== 'moveObject') continue
-        const fields = content.fields as Record<string, string> | undefined
+      for (const item of items) {
+        const content = item.data?.content
+        if (!content || !('fields' in content)) continue
+        const fields = (content as { fields?: Record<string, unknown> }).fields
         if (!fields) continue
-        // Match by the portfolio object ID this share was issued for
-        if (fields['portfolio_id'] === portfolioObjectId) {
-          matched.push({
-            objectId: item.data!.objectId,
-            navPerShare,
-          })
+
+        // Normalize portfolio_id: handle both "0x..." and { bytes: "0x..." }
+        const rawId = fields['portfolio_id']
+        const idStr = rawId !== null && typeof rawId === 'object'
+          ? ((rawId as Record<string, string>).bytes ?? '')
+          : String(rawId ?? '')
+
+        if (idStr === portfolioObjectId) {
+          const rawShares = fields['shares']
+          const sharesQuantity = BigInt(String(rawShares ?? '0'))
+          matched.push({ objectId: item.data!.objectId, sharesQuantity })
         }
       }
       setShares(matched)
@@ -150,11 +205,12 @@ function WithdrawModal({
     } finally {
       setLoadingShares(false)
     }
-  }, [account, chainConfig, suiClient, portfolioObjectId, navPerShare])
+  }, [account, chainConfig, suiClient, portfolioObjectId])
 
-  // Load shares when modal opens
-  const handleOpenChange = (isOpen: boolean) => {
-    if (isOpen) {
+  // Trigger fetch when modal opens. In Radix controlled mode, onOpenChange does NOT fire
+  // when the parent sets open=true — only when the user closes. Use useEffect instead.
+  useEffect(() => {
+    if (open) {
       void fetchShares()
     } else {
       if (step === 'withdrawing') return
@@ -162,14 +218,26 @@ function WithdrawModal({
       setShares([])
       setTxDigest('')
       setErrorMsg('')
+      setQuoteBalanceRaw(null)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  const handleOpenChange = (isOpen: boolean) => {
+    if (!isOpen && step !== 'withdrawing') {
       onClose()
     }
   }
 
-  const estimatedDusdc = shares.reduce((acc) => {
-    // 1 share = navPerShare / NAV_SCALE DUSDC (raw)
-    return acc + (navPerShare * 1n) / NAV_SCALE
-  }, 0n)
+  const totalShareUnits = shares.reduce((acc, s) => acc + s.sharesQuantity, 0n)
+  // raw DUSDC = totalShares × navPerShare / NAV_SCALE
+  const estimatedDusdc = (totalShareUnits * navPerShare) / NAV_SCALE
+  // True if the vault's liquid quote_balance can cover the full withdrawal.
+  // When false, some funds are deployed in PLP — the keeper must redeem them first.
+  const hasEnoughLiquidity = quoteBalanceRaw == null || quoteBalanceRaw >= estimatedDusdc
+  const inPlpRaw = (!hasEnoughLiquidity && quoteBalanceRaw != null)
+    ? estimatedDusdc - quoteBalanceRaw
+    : 0n
 
   const handleWithdraw = useCallback(async () => {
     if (!account || !chainConfig?.sonarkPackage) return
@@ -177,7 +245,6 @@ function WithdrawModal({
 
     const PKG   = chainConfig.sonarkPackage
     const DUSDC = chainConfig.dusdcType
-    const CLOCK = chainConfig.clockId
 
     setStep('withdrawing')
     try {
@@ -191,7 +258,6 @@ function WithdrawModal({
           arguments: [
             tx.object(portfolioObjectId),
             tx.object(share.objectId),
-            tx.object(CLOCK),
           ],
         })
         coins.push(coin)
@@ -251,7 +317,7 @@ function WithdrawModal({
                   >
                     <div className="flex justify-between px-4 py-2.5 text-sm">
                       <span style={{ color: 'var(--ink-muted)' }}>Shares to redeem</span>
-                      <span className="font-medium" style={{ color: 'var(--ink-primary)' }}>{shares.length}</span>
+                      <span className="font-medium" style={{ color: 'var(--ink-primary)' }}>{(Number(totalShareUnits) / 1e6).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between px-4 py-2.5 text-sm">
                       <span style={{ color: 'var(--ink-muted)' }}>NAV per share</span>
@@ -266,10 +332,27 @@ function WithdrawModal({
                       </span>
                     </div>
                   </div>
-                  <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>
-                    All {shares.length} share token{shares.length !== 1 ? 's' : ''} will be burned in one transaction.
-                    Actual DUSDC received depends on vault balance at settlement.
-                  </p>
+                  {!hasEnoughLiquidity ? (
+                    <div
+                      className="flex items-start gap-2 rounded-lg px-4 py-3"
+                      style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}
+                    >
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'var(--status-yellow, #f59e0b)' }} />
+                      <div className="text-xs space-y-1" style={{ color: 'var(--ink-secondary)' }}>
+                        <p className="font-medium">Funds partially deployed in PLP</p>
+                        <p>
+                          ~{(Number(inPlpRaw) / 1e6).toFixed(2)} DUSDC is in active PLP positions.
+                          The keeper will redeem them automatically on the next cycle.
+                          Please try again in a few minutes.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>
+                      All {shares.length} PortfolioShare object{shares.length !== 1 ? 's' : ''} will be burned in one transaction.
+                      Actual DUSDC received depends on vault balance at settlement.
+                    </p>
+                  )}
                 </>
               )}
             </motion.div>
@@ -350,14 +433,194 @@ function WithdrawModal({
           ) : step === 'preview' ? (
             <>
               <Button variant="ghost" onClick={() => handleOpenChange(false)}>Cancel</Button>
-              <Button
-                onClick={handleWithdraw}
-                disabled={loadingShares || shares.length === 0 || !account}
-              >
-                {!account ? 'Connect wallet' : `Withdraw ${shares.length} share${shares.length !== 1 ? 's' : ''}`}
-              </Button>
+              {!hasEnoughLiquidity ? (
+                <Button onClick={() => { setQuoteBalanceRaw(null); void fetchShares() }} variant="outline">
+                  Refresh
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleWithdraw}
+                  disabled={loadingShares || shares.length === 0 || !account}
+                >
+                  {!account ? 'Connect wallet' : `Withdraw ${(Number(totalShareUnits) / 1e6).toFixed(2)} shares`}
+                </Button>
+              )}
             </>
           ) : null /* withdrawing — no buttons */}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ── DepositModal ───────────────────────────────────────────────────────────────
+
+type DepositStep = 'preview' | 'depositing' | 'done' | 'error'
+
+function DepositModal({
+  open,
+  onClose,
+  portfolioObjectId,
+  navPerShareRaw,
+}: {
+  open: boolean
+  onClose: () => void
+  portfolioObjectId: string
+  navPerShareRaw: string
+}) {
+  const [step, setStep] = useState<DepositStep>('preview')
+  const [amount, setAmount] = useState('')
+  const [txDigest, setTxDigest] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
+
+  const account = useCurrentAccount()
+  const suiClient = useSuiClient()
+  const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction()
+  const { data: chainConfig } = useChainConfig()
+
+  const DUSDC_SCALE = 1_000_000n
+  const NAV_SCALE   = 1_000_000_000n
+  const navPerShare = BigInt(navPerShareRaw || '1000000000')
+
+  const amountRaw = (() => {
+    const n = parseFloat(amount)
+    return isNaN(n) || n <= 0 ? 0n : BigInt(Math.floor(n * 1_000_000))
+  })()
+
+  const estimatedShares = amountRaw > 0n
+    ? (amountRaw * NAV_SCALE) / navPerShare
+    : 0n
+
+  const handleDeposit = useCallback(async () => {
+    if (!account || !chainConfig?.sonarkPackage || amountRaw <= 0n) return
+    const PKG   = chainConfig.sonarkPackage
+    const DUSDC = chainConfig.dusdcType
+    const CLOCK = '0x0000000000000000000000000000000000000000000000000000000000000006'
+
+    setStep('depositing')
+    try {
+      const coins = await suiClient.getCoins({ owner: account.address, coinType: DUSDC })
+      const coin = coins.data.find((c) => BigInt(c.balance) >= amountRaw)
+      if (!coin) throw new Error(`Insufficient DUSDC balance. Need ${amount} DUSDC.`)
+
+      const tx = new Transaction()
+      const [depositCoin] = tx.splitCoins(tx.object(coin.coinObjectId), [tx.pure.u64(amountRaw)])
+      const shareToken = tx.moveCall({
+        target: `${PKG}::portfolio::deposit`,
+        typeArguments: [DUSDC],
+        arguments: [tx.object(portfolioObjectId), depositCoin, tx.object(CLOCK)],
+      })
+      tx.transferObjects([shareToken], account.address)
+
+      const result = await signAndExecute({ transaction: tx })
+      setTxDigest(result.digest)
+      setStep('done')
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : String(err))
+      setStep('error')
+    }
+  }, [account, chainConfig, amountRaw, amount, suiClient, portfolioObjectId, signAndExecute])
+
+  const handleOpenChange = (isOpen: boolean) => {
+    if (!isOpen) {
+      if (step === 'depositing') return
+      setStep('preview')
+      setAmount('')
+      setTxDigest('')
+      setErrorMsg('')
+      onClose()
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Deposit DUSDC</DialogTitle>
+          <DialogDescription>
+            Add DUSDC to this portfolio and receive PortfolioShare tokens redeemable at current NAV.
+          </DialogDescription>
+        </DialogHeader>
+
+        <AnimatePresence mode="wait">
+          {step === 'preview' && (
+            <motion.div key="preview" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+              <div>
+                <Label htmlFor="dep-amount">Amount (DUSDC)</Label>
+                <Input
+                  id="dep-amount"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="10.00"
+                  className="mt-1"
+                />
+              </div>
+              {amountRaw > 0n && (
+                <div className="rounded-lg divide-y" style={{ border: '1px solid var(--line)', background: 'var(--bg-inset)' }}>
+                  {([
+                    ['Deposit amount', `${(Number(amountRaw) / 1e6).toFixed(6)} DUSDC`],
+                    ['NAV per share', (Number(navPerShare) / 1e9).toFixed(6)],
+                    ['Shares received', (Number(estimatedShares) / 1e6).toFixed(2)],
+                  ] as [string, string][]).map(([k, v]) => (
+                    <div key={k} className="flex justify-between px-4 py-2.5 text-sm">
+                      <span style={{ color: 'var(--ink-muted)' }}>{k}</span>
+                      <span className="font-medium" style={{ color: 'var(--ink-primary)' }}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {step === 'depositing' && (
+            <motion.div key="depositing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-4 py-6">
+              <Loader className="w-8 h-8 animate-spin" style={{ color: 'var(--ink-accent)' }} />
+              <p className="text-sm" style={{ color: 'var(--ink-muted)' }}>Depositing…</p>
+            </motion.div>
+          )}
+
+          {step === 'done' && (
+            <motion.div key="done" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-4 py-6 text-center">
+              <CheckCircle className="w-10 h-10 text-success" />
+              <div>
+                <p className="font-semibold" style={{ color: 'var(--ink-primary)' }}>Deposit complete</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--ink-muted)' }}>
+                  PortfolioShare tokens are now in your wallet. Use Withdraw to redeem them.
+                </p>
+              </div>
+              {txDigest && (
+                <a href={`https://suiscan.xyz/testnet/tx/${txDigest}`} target="_blank" rel="noopener noreferrer"
+                  className="text-xs flex items-center gap-1" style={{ color: 'var(--ink-accent)' }}>
+                  View TX <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </motion.div>
+          )}
+
+          {step === 'error' && (
+            <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-3 py-4 text-center">
+              <AlertCircle className="w-8 h-8 text-danger" />
+              <p className="text-sm text-danger">{errorMsg}</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <DialogFooter>
+          {(step === 'preview' || step === 'error') ? (
+            <>
+              <Button variant="ghost" onClick={() => handleOpenChange(false)}>Cancel</Button>
+              {step === 'preview' && (
+                <Button onClick={handleDeposit} disabled={!account || amountRaw <= 0n}>
+                  Deposit {amount ? `${amount} DUSDC` : ''}
+                </Button>
+              )}
+            </>
+          ) : step === 'done' ? (
+            <Button onClick={() => handleOpenChange(false)}>Close</Button>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -527,6 +790,7 @@ export default function PortfolioDetail() {
   const { data: portfolio, isLoading, error } = usePortfolioDetail(id!)
   const { mutate: patchPortfolio, isPending: isPausing } = usePatchPortfolio(id!)
   const [showConfig, setShowConfig] = useState(false)
+  const [showDeposit, setShowDeposit] = useState(false)
   const [showWithdraw, setShowWithdraw] = useState(false)
   const [showRenew, setShowRenew] = useState(false)
   const [policyCapExpiryMs, setPolicyCapExpiryMs] = useState<number | null>(null)
@@ -617,6 +881,15 @@ export default function PortfolioDetail() {
               : <><Pause className="w-3.5 h-3.5" /> Pause</>
             }
           </Button>
+          {portfolio.vaultObjectId && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDeposit(true)}
+            >
+              <LogIn className="w-3.5 h-3.5" /> Deposit
+            </Button>
+          )}
           {portfolio.vaultObjectId && (
             <Button
               variant="outline"
@@ -856,6 +1129,15 @@ export default function PortfolioDetail() {
         portfolioId={id!}
         currentConfig={{ name: portfolio.name }}
       />
+
+      {portfolio.vaultObjectId && (
+        <DepositModal
+          open={showDeposit}
+          onClose={() => setShowDeposit(false)}
+          portfolioObjectId={portfolio.vaultObjectId}
+          navPerShareRaw={portfolio.navPerShareRaw}
+        />
+      )}
 
       {portfolio.vaultObjectId && (
         <WithdrawModal

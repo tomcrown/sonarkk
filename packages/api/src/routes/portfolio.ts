@@ -193,7 +193,7 @@ portfolioRouter.get('/activity', async (req, res) => {
         : c.status;
       const navBefore = c.navPerShareBefore ? Number(c.navPerShareBefore) : 1_000_000_000;
       const navAfter  = c.navPerShareAfter  ? Number(c.navPerShareAfter)  : null;
-      const cyclePnlPct = navAfter != null
+      const cyclePnlPct = c.status === 'done' && navAfter != null
         ? ((navAfter - navBefore) / navBefore) * 100
         : null;
       return {
@@ -432,13 +432,39 @@ portfolioRouter.get('/:id', async (req, res) => {
       : null;
 
     // NAV history from cycles (ascending order)
-    const navHistory = [...p.cycles]
-      .reverse()
-      .filter(c => c.navPerShareAfter != null)
-      .map(c => ({
-        ts: c.createdAt.toISOString(),
-        navPerShare: b(c.navPerShareAfter)!,
-      }));
+    const navCycles = [...p.cycles].reverse().filter(c => c.navPerShareAfter != null);
+    const navHistory = navCycles.map(c => ({
+      ts: c.createdAt.toISOString(),
+      navPerShare: b(c.navPerShareAfter)!,
+    }));
+
+    // Rolling APY: annualized return from first to last cycle with NAV data
+    let rollingApyPct: number | null = null;
+    if (navCycles.length >= 2) {
+      const firstNav = Number(navCycles[0]!.navPerShareAfter!);
+      const lastNav  = Number(navCycles[navCycles.length - 1]!.navPerShareAfter!);
+      const firstMs  = navCycles[0]!.createdAt.getTime();
+      const lastMs   = navCycles[navCycles.length - 1]!.createdAt.getTime();
+      const periodDays = Math.max((lastMs - firstMs) / 86_400_000, 1 / 24);
+      if (firstNav > 0) {
+        const r = (lastNav / firstNav) - 1;
+        rollingApyPct = (Math.pow(1 + r, 365 / periodDays) - 1) * 100;
+        if (!isFinite(rollingApyPct)) rollingApyPct = null;
+      }
+    }
+
+    // Max drawdown: largest peak-to-trough decline in NAV
+    let maxDrawdownPct: number | null = null;
+    if (navCycles.length >= 2) {
+      let peak = Number(navCycles[0]!.navPerShareAfter!);
+      let maxDD = 0;
+      for (const c of navCycles) {
+        const nav = Number(c.navPerShareAfter!);
+        if (nav > peak) peak = nav;
+        if (peak > 0) maxDD = Math.max(maxDD, (peak - nav) / peak * 100);
+      }
+      maxDrawdownPct = maxDD;
+    }
 
     res.json({
       id:                 p.id,
@@ -463,8 +489,8 @@ portfolioRouter.get('/:id', async (req, res) => {
       createdAt:          p.createdAt.toISOString(),
       lastKeeperRun:      latestCycle?.createdAt.toISOString() ?? null,
       totalReturnPct,
-      rollingApyPct:      null,
-      maxDrawdownPct:     null,
+      rollingApyPct,
+      maxDrawdownPct,
       navHistory,
       openPositions: p.openPositions.map(pos => ({
         id:           pos.id,

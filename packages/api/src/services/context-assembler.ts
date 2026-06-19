@@ -2,15 +2,14 @@
  * context-assembler.ts — Gathers live state for the AI copilot system prompt.
  *
  * Pulls from three sources:
- *   1. predict-server  — active oracle SVI → ATM vol + spread + expiry
+ *   1. predict-server  — active oracle SVI → ATM vol + spread + expiry + BTC spot
  *   2. DB (Prisma)     — portfolio state, recent cycles, vault leaderboard
  *   3. Derived         — market regime classification
  *
  * Called once per chat request; cached per wallet/portfolio for 30 seconds.
  */
 
-import { getPrismaClient, computeSpread, atmVol as computeAtmVol, binaryCallProb } from '@sonarkk/core';
-import { env } from '../env.js';
+import { getPrismaClient, computeSpread, atmVol as computeAtmVol, binaryCallProb, predictClient } from '@sonarkk/core';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -60,89 +59,63 @@ export interface LiveContext {
 const CACHE_TTL_MS = 30_000;
 const cache = new Map<string, LiveContext>();
 
-// ── BTC price fetch ───────────────────────────────────────────────────────────
-
-async function fetchBtcPrice(): Promise<number | null> {
-  try {
-    const resp = await fetch(
-      'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT',
-      { signal: AbortSignal.timeout(3000) },
-    );
-    if (!resp.ok) return null;
-    const data = (await resp.json()) as { price?: string };
-    return data.price ? parseFloat(data.price) : null;
-  } catch {
-    return null;
-  }
-}
-
-// ── Oracle fetch ───────────────────────────────────────────────────────────────
-
-interface RawOracle {
-  oracle_id: string;
-  expiry: number;
-  atm_vol: number;
-  t_years: number;
-  svi: { a: number; b: number; rho: number; m: number; sigma: number };
-}
-
-async function fetchActiveOracle(): Promise<RawOracle | null> {
-  try {
-    const url = `${env.PREDICT_SERVER_URL}/oracles/active`;
-    const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!resp.ok) return null;
-    const data = (await resp.json()) as { oracles?: RawOracle[] };
-    if (!data.oracles || data.oracles.length === 0) return null;
-
-    // Pick the oracle with the highest t_years (longest to expiry — most info).
-    return data.oracles.sort((a, b) => b.t_years - a.t_years)[0] ?? null;
-  } catch {
-    return null;
-  }
-}
-
 // ── Market context ─────────────────────────────────────────────────────────────
 
 async function buildMarketContext(): Promise<MarketContext | null> {
-  const [oracleResult, btcPriceResult] = await Promise.allSettled([
-    fetchActiveOracle(),
-    fetchBtcPrice(),
+  // Single call to get all active oracles — reused for count + picking best oracle.
+  let activeOracles: Awaited<ReturnType<typeof predictClient.oracles>>;
+  try {
+    activeOracles = await predictClient.oracles({ status: 'active' });
+  } catch {
+    return null;
+  }
+
+  if (activeOracles.length === 0) return null;
+
+  // Pick the oracle expiring soonest (most relevant for current market state).
+  const oracle = activeOracles.sort((a, b) => a.expiry - b.expiry)[0]!;
+
+  // Fetch SVI params and spot price for that oracle in parallel.
+  const [sviResult, priceResult] = await Promise.allSettled([
+    predictClient.oracleSvi(oracle.oracle_id, { limit: 1 }),
+    predictClient.oraclePrices(oracle.oracle_id, { limit: 1 }),
   ]);
 
-  const oracle = oracleResult.status === 'fulfilled' ? oracleResult.value : null;
-  if (!oracle) return null;
+  const sviRows = sviResult.status === 'fulfilled' ? sviResult.value : [];
+  const priceRows = priceResult.status === 'fulfilled' ? priceResult.value : [];
 
-  const btcPriceUsd = btcPriceResult.status === 'fulfilled' ? btcPriceResult.value : null;
+  const svi = sviRows[0];
+  if (!svi) return null;
 
-  const atm = oracle.atm_vol ?? computeAtmVol(oracle.svi, oracle.t_years);
-  const p_atm = binaryCallProb(oracle.svi, 0);
+  const btcPriceUsd = priceRows[0] != null ? priceRows[0].spot / 1e9 : null;
+
+  const tYears = Math.max((oracle.expiry - Date.now()) / (365.25 * 24 * 3_600_000), 0);
+  const SVI_SCALE = 1e9;
+  const sviParams = {
+    a:     svi.a     / SVI_SCALE,
+    b:     svi.b     / SVI_SCALE,
+    rho:   (svi.rho_negative ? -1 : 1) * (svi.rho   / SVI_SCALE),
+    m:     (svi.m_negative   ? -1 : 1) * (svi.m     / SVI_SCALE),
+    sigma: svi.sigma / SVI_SCALE,
+  };
+
+  const atm = computeAtmVol(sviParams, tYears);
+  const p_atm = binaryCallProb(sviParams, 0);
   const spread = computeSpread(p_atm, 0.3); // assume 30% utilization for context
 
   const regime: MarketContext['regime'] =
     atm < 0.25 ? 'calm' :
     atm < 0.50 ? 'normal' : 'high_vol';
 
-  const expiryMs = oracle.expiry;
-  const expiryInMin = expiryMs > Date.now()
-    ? (expiryMs - Date.now()) / 60_000
+  const expiryInMin = oracle.expiry > Date.now()
+    ? (oracle.expiry - Date.now()) / 60_000
     : null;
-
-  // Count active oracles from the same call.
-  let activeCount = 1;
-  try {
-    const url = `${env.PREDICT_SERVER_URL}/oracles/active`;
-    const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (resp.ok) {
-      const data = (await resp.json()) as { oracles?: unknown[] };
-      activeCount = data.oracles?.length ?? 1;
-    }
-  } catch { /* ignore */ }
 
   return {
     atm_vol: atm,
     regime,
     spread_at_atm: spread,
-    active_oracle_count: activeCount,
+    active_oracle_count: activeOracles.length,
     expiry_in_minutes: expiryInMin,
     btc_price_usd: btcPriceUsd,
   };

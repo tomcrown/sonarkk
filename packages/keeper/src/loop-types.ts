@@ -13,4 +13,5 @@ export const STRATEGY_TYPE_MAP: Record<string, StrategyId | null> = {
   RANGE_ROLL:          'range_roll',
   VOL_TARGETED_RANGE:  'vol_targeted_range',
   CROSS_VENUE_ARB:     'vol_arb_sell',
+  MARGIN_LOOP:         'margin_loop',
 };
