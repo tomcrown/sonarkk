@@ -138,16 +138,16 @@ export default function Backtest() {
   const displayResult = selectedResult ?? runHistory[0] ?? null
 
   return (
-    <div className="px-10 py-12 max-w-[1600px]">
+    <div className="px-4 sm:px-6 lg:px-10 py-6 lg:py-12 max-w-[1600px]">
       <div className="text-xs tracking-[0.2em] text-text-dim mb-3">RESEARCH</div>
       <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase mb-8">Simulation Room</h1>
       <p className="text-muted-foreground mb-12">
         Replay strategies against real oracle and SVI data. Results use synthetic trader flow on testnet.
       </p>
 
-      <div className="flex gap-6 items-start">
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
         {/* Controls + history */}
-        <div className="w-72 shrink-0 space-y-5">
+        <div className="w-full lg:w-72 lg:shrink-0 space-y-5">
           <div className="bg-card border border-border rounded-lg p-6 space-y-5">
             <div className="text-[10px] tracking-[0.15em] text-accent">RUN CONTROLS</div>
 
@@ -294,7 +294,7 @@ export default function Backtest() {
                 </div>
 
                 {/* Core metrics */}
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <MetricBox
                     label="TOTAL RETURN"
                     value={displayResult.metrics.totalReturnPct != null ? formatPct(displayResult.metrics.totalReturnPct) : '—'}
@@ -312,7 +312,7 @@ export default function Backtest() {
                   />
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <MetricBox
                     label="WIN RATE"
                     value={displayResult.metrics.winRate != null ? formatPct(displayResult.metrics.winRate * 100) : '—'}

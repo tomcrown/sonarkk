@@ -147,7 +147,7 @@ export default function Dashboard() {
 
   if (!isConnected) {
     return (
-      <div className="px-10 py-12 max-w-[1600px]">
+      <div className="px-4 sm:px-6 lg:px-10 py-6 lg:py-12 max-w-[1600px]">
         <ConnectPrompt title="Dashboard" description="Connect your wallet to see your portfolio value, bot status, and live activity." />
       </div>
     )
@@ -174,7 +174,7 @@ export default function Dashboard() {
   const chartPoints = chartData?.points ?? []
 
   return (
-    <div className="px-10 py-12 max-w-[1600px]">
+    <div className="px-4 sm:px-6 lg:px-10 py-6 lg:py-12 max-w-[1600px]">
       <div className="text-xs tracking-[0.2em] text-text-dim mb-3">OVERVIEW</div>
       <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase mb-10">Dashboard</h1>
 
@@ -342,7 +342,7 @@ export default function Dashboard() {
                   initial={{ opacity: 0, x: -6 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.05 }}
-                  className="flex items-center justify-between py-3 gap-4"
+                  className="flex items-center justify-between flex-wrap py-3 gap-4"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span className={cn(

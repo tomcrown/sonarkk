@@ -23,12 +23,12 @@ export default function Leaderboard() {
   const totalCycles    = entries.reduce((s, e) => s + (e.cycleCount ?? 0), 0)
 
   return (
-    <div className="px-10 py-12 max-w-[1600px]">
+    <div className="px-4 sm:px-6 lg:px-10 py-6 lg:py-12 max-w-[1600px]">
       <div className="text-xs tracking-[0.2em] text-text-dim mb-3">DISCOVER</div>
       <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase mb-10">Leaderboard</h1>
 
       {/* Summary stat cards */}
-      <div className="grid grid-cols-3 gap-4 mb-12">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-12">
         {[
           { l: 'STRATEGIES',  v: isLoading ? '—' : String(entries.length) },
           { l: 'TOTAL COPIES', v: isLoading ? '—' : totalCopiers.toLocaleString() },
@@ -76,20 +76,26 @@ export default function Leaderboard() {
             </div>
             <div className="p-5">
               <TabsContent value="all">
-                <LeaderboardTable entries={entries} onCopy={setCopyTarget} />
+                <div className="overflow-x-auto">
+                  <LeaderboardTable entries={entries} onCopy={setCopyTarget} />
+                </div>
               </TabsContent>
               <TabsContent value="house">
                 {houseEntries.length === 0 ? (
                   <p className="text-sm text-text-dim py-4">No house strategies on the board yet.</p>
                 ) : (
-                  <LeaderboardTable entries={houseEntries} onCopy={setCopyTarget} />
+                  <div className="overflow-x-auto">
+                    <LeaderboardTable entries={houseEntries} onCopy={setCopyTarget} />
+                  </div>
                 )}
               </TabsContent>
               <TabsContent value="bettor">
                 {bettorEntries.length === 0 ? (
                   <p className="text-sm text-text-dim py-4">No bettor strategies on the board yet.</p>
                 ) : (
-                  <LeaderboardTable entries={bettorEntries} onCopy={setCopyTarget} />
+                  <div className="overflow-x-auto">
+                    <LeaderboardTable entries={bettorEntries} onCopy={setCopyTarget} />
+                  </div>
                 )}
               </TabsContent>
             </div>

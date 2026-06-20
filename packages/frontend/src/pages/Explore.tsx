@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import type { SonarkAction } from '@/components/chat/ChatMessage'
 import { Shield, TrendingUp, AlertTriangle, ArrowRight, ChevronRight, Zap, Wallet, Sliders, BarChart2, Users } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { VaultConfigModal } from '@/components/strategy/VaultConfigModal'
@@ -354,9 +355,22 @@ const FILTER_LABELS: { value: Filter; label: string }[] = [
 ]
 
 export default function Explore() {
-  const [selected, setSelected]     = useState<number | null>(null)
+  const [selected, setSelected]       = useState<number | null>(null)
   const [deployTarget, setDeployTarget] = useState<number | null>(null)
-  const [filter, setFilter]         = useState<Filter>('all')
+  const [filter, setFilter]           = useState<Filter>('all')
+  const [prefillConfig, setPrefillConfig] = useState<Partial<SonarkAction> | undefined>()
+
+  // Read AI-recommended config prefill from sessionStorage (set by DeployActionCard)
+  useEffect(() => {
+    const raw = sessionStorage.getItem('sonark_prefill')
+    if (!raw) return
+    sessionStorage.removeItem('sonark_prefill')
+    try {
+      const action = JSON.parse(raw) as SonarkAction
+      setPrefillConfig(action)
+      setDeployTarget(action.strategy_type)
+    } catch { /* ignore malformed */ }
+  }, [])
 
   const visible = ALL_TYPES.filter((t) => {
     if (filter === 'house')  return HOUSE_STRATEGIES.has(t)
@@ -365,13 +379,13 @@ export default function Explore() {
   })
 
   return (
-    <div className="px-10 py-12 max-w-[1600px]">
+    <div className="px-4 sm:px-6 lg:px-10 py-6 lg:py-12 max-w-[1600px]">
       <div className="text-xs tracking-[0.2em] text-text-dim mb-3">DEPLOY</div>
       <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase mb-3">Strategy Studio</h1>
       <p className="text-muted-foreground mb-12">Build, test, and deploy automated strategies on DeepBook Predict.</p>
 
       {/* ── Filter pills ─────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center flex-wrap gap-2">
         {FILTER_LABELS.map(({ value, label }) => (
           <button
             key={value}
@@ -389,7 +403,7 @@ export default function Explore() {
       </div>
 
       {/* ── Split layout ─────────────────────────────────────────────── */}
-      <div className="grid gap-6 items-start" style={{ gridTemplateColumns: '3fr 2fr' }}>
+      <div className="grid gap-6 items-start xl:grid-cols-[3fr_2fr]">
 
         {/* Left: strategy grid */}
         <div className="min-w-0">
@@ -410,7 +424,7 @@ export default function Explore() {
 
         {/* Right: detail panel — sticky, fills its grid column */}
         <div
-          className="sticky top-20 rounded-xl p-8"
+          className="xl:sticky top-20 rounded-xl p-8"
           style={{
             background: 'var(--bg-card)',
             border: '1px solid var(--line)',
@@ -433,8 +447,16 @@ export default function Explore() {
 
       <VaultConfigModal
         defaultStrategyType={deployTarget ?? 0}
+        defaultConfig1={prefillConfig ? {
+          utilTarget:                prefillConfig.util_target,
+          liquidityReservePct:       prefillConfig.liquidity_reserve_pct,
+          drawdownPauseThresholdPct: prefillConfig.drawdown_pause_threshold_pct,
+          strikeSelection:           prefillConfig.strike_selection,
+          volTargetBps:              prefillConfig.vol_target_bps,
+          hedgeMultiplier:           prefillConfig.hedge_multiplier,
+        } : undefined}
         open={deployTarget !== null}
-        onClose={() => setDeployTarget(null)}
+        onClose={() => { setDeployTarget(null); setPrefillConfig(undefined) }}
       />
     </div>
   )

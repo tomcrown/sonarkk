@@ -1,11 +1,24 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
+import { Menu } from 'lucide-react'
 import { WalletButton } from '@/components/wallet/WalletButton'
 
-export function Header() {
+interface HeaderProps {
+  onMenuClick?: () => void
+}
+
+export function Header({ onMenuClick }: HeaderProps) {
   return (
-    <header className="h-16 border-b border-border flex items-center justify-between px-8 sticky top-0 bg-background/80 backdrop-blur z-30 shrink-0">
-      <div />
+    <header className="h-16 border-b border-border flex items-center justify-between px-4 sm:px-8 sticky top-0 bg-background/80 backdrop-blur z-30 shrink-0">
+      {/* Hamburger — mobile only */}
+      <button
+        onClick={onMenuClick}
+        className="p-2 -ml-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors md:hidden"
+        aria-label="Open menu"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+      <div className="hidden md:block" />
       <WalletButton />
     </header>
   )

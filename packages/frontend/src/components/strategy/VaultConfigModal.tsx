@@ -98,6 +98,7 @@ type Step =
 
 interface VaultConfigModalProps {
   defaultStrategyType?: number
+  defaultConfig1?: Partial<SlotConfig>
   open: boolean
   onClose: () => void
 }
@@ -271,7 +272,7 @@ function StepDots({ steps, current }: { steps: string[]; current: number }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function VaultConfigModal({ defaultStrategyType = 0, open, onClose }: VaultConfigModalProps) {
+export function VaultConfigModal({ defaultStrategyType = 0, defaultConfig1, open, onClose }: VaultConfigModalProps) {
   // ── Modal-level state ──────────────────────────────────────────────────────
   const [botName, setBotName]           = useState('')
   const [totalDeposit, setTotalDeposit] = useState('200')
@@ -292,10 +293,13 @@ export function VaultConfigModal({ defaultStrategyType = 0, open, onClose }: Vau
   const [slot1, setSlot1] = useState<DeployedSlot | null>(null)
   const [slot2, setSlot2] = useState<DeployedSlot | null>(null)
 
-  // Sync strategy1 when the modal opens with a different defaultStrategyType
+  // Sync strategy1 + prefill config1 when the modal opens
   useEffect(() => {
-    if (open) setStrategy1(defaultStrategyType)
-  }, [open, defaultStrategyType])
+    if (open) {
+      setStrategy1(defaultStrategyType)
+      if (defaultConfig1) setConfig1(c => ({ ...c, ...defaultConfig1 }))
+    }
+  }, [open, defaultStrategyType, defaultConfig1])
 
   // ── Hooks ─────────────────────────────────────────────────────────────────
   const account   = useCurrentAccount()

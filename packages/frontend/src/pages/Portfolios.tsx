@@ -17,7 +17,7 @@ export default function Portfolios() {
 
   if (!isConnected) {
     return (
-      <div className="px-10 py-12 max-w-[1600px]">
+      <div className="px-4 sm:px-6 lg:px-10 py-6 lg:py-12 max-w-[1600px]">
         <div className="text-xs tracking-[0.2em] text-text-dim mb-3">STUDIO</div>
         <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase mb-10">My Portfolios</h1>
         <EmptyState
@@ -36,9 +36,9 @@ export default function Portfolios() {
   }
 
   return (
-    <div className="px-10 py-12 max-w-[1600px]">
+    <div className="px-4 sm:px-6 lg:px-10 py-6 lg:py-12 max-w-[1600px]">
       <div className="text-xs tracking-[0.2em] text-text-dim mb-3">STUDIO</div>
-      <div className="flex items-start justify-between mb-12">
+      <div className="flex items-start justify-between flex-wrap gap-4 mb-12">
         <div>
           <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase">My Portfolios</h1>
           <p className="text-muted-foreground mt-3">

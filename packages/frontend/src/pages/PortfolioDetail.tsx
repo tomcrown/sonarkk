@@ -868,7 +868,7 @@ export default function PortfolioDetail() {
 
   if (isLoading) {
     return (
-      <div className="px-10 py-12 max-w-[1600px] space-y-6">
+      <div className="px-4 sm:px-6 lg:px-10 py-6 lg:py-12 max-w-[1600px] space-y-6">
         <Skeleton className="h-8 w-48" />
         <div className="grid grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
@@ -881,7 +881,7 @@ export default function PortfolioDetail() {
 
   if (error || !portfolio) {
     return (
-      <div className="px-10 py-12 max-w-[1600px]">
+      <div className="px-4 sm:px-6 lg:px-10 py-6 lg:py-12 max-w-[1600px]">
         <div className="rounded-xl p-8 text-center border border-danger/20 bg-danger/5">
           <p className="text-sm mb-4 text-danger">
             {error ? 'Failed to load portfolio.' : 'Portfolio not found.'}
@@ -902,9 +902,9 @@ export default function PortfolioDetail() {
   const latestNav = rawNavHistory.at(-1)?.navPerShare ?? portfolio.navPerShareRaw
 
   return (
-    <div className="px-10 py-12 max-w-[1600px] space-y-8">
+    <div className="px-4 sm:px-6 lg:px-10 py-6 lg:py-12 max-w-[1600px] space-y-8">
       {/* Breadcrumb */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Button asChild variant="ghost" size="sm">
             <Link to="/portfolios">
@@ -924,7 +924,7 @@ export default function PortfolioDetail() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center flex-wrap gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -1126,7 +1126,7 @@ export default function PortfolioDetail() {
             </BracketCard>
 
             {/* PnL summary */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
                 {
                   label: 'Total Return',
@@ -1202,8 +1202,9 @@ export default function PortfolioDetail() {
                 className="rounded-xl overflow-hidden"
                 style={{ background: 'var(--bg-card)', border: '1px solid var(--line)' }}
               >
+                <div className="overflow-x-auto">
                 <div
-                  className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr] gap-4 px-5 py-3 border-b text-[10px] uppercase tracking-wider"
+                  className="min-w-[600px] grid grid-cols-[1fr_1fr_1fr_1fr_1fr] gap-4 px-5 py-3 border-b text-[10px] uppercase tracking-wider"
                   style={{ borderColor: 'var(--line)', color: 'var(--ink-muted)' }}
                 >
                   <span>Market</span>
@@ -1212,7 +1213,7 @@ export default function PortfolioDetail() {
                   <span>Payout</span>
                   <span>Opened</span>
                 </div>
-                <div className="divide-y" style={{ borderColor: 'var(--line-subtle)' }}>
+                <div className="min-w-[600px] divide-y" style={{ borderColor: 'var(--line-subtle)' }}>
                   {portfolio.openPositions.map((pos, i) => (
                     <motion.div
                       key={i}
@@ -1234,6 +1235,7 @@ export default function PortfolioDetail() {
                       </span>
                     </motion.div>
                   ))}
+                </div>
                 </div>
               </div>
             )}

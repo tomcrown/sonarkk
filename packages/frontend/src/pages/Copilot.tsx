@@ -34,8 +34,8 @@ export default function Copilot() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-10 pt-10 pb-4 border-b border-border">
-        <div className="flex items-center justify-between">
+      <div className="px-4 sm:px-6 lg:px-10 pt-6 lg:pt-10 pb-4 border-b border-border">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <div className="text-xs tracking-[0.2em] text-text-dim mb-2">AI</div>
             <h1 className="text-4xl font-display font-medium tracking-tight uppercase">Copilot</h1>
@@ -57,7 +57,7 @@ export default function Copilot() {
       </div>
 
       {/* Messages area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-10 py-8">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-10 py-6 lg:py-8">
         {isEmpty ? (
           <div className="h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#A9A8EC] to-[#7B79D9] flex items-center justify-center mb-5 shadow-[0_0_24px_rgba(169,168,236,0.3)]">
@@ -117,7 +117,7 @@ export default function Copilot() {
       </div>
 
       {/* Input bar */}
-      <div className="border-t border-border px-10 py-5 shrink-0">
+      <div className="border-t border-border px-4 sm:px-6 lg:px-10 py-4 lg:py-5 shrink-0">
         <div className="max-w-3xl mx-auto">
           <ChatInput
             onSend={sendMessage}

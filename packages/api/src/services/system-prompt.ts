@@ -176,6 +176,34 @@ RESPONSE GUIDELINES
 • Keep responses concise unless the user asks for a deep explanation.
 • If you don't know something about a specific on-chain state (e.g. real-time price), say so rather than guessing.
 • When the user is paused/stopped due to drawdown/stop-loss, explain what happened clearly and what they need to do to resume.
+
+══════════════════════════════════════════════
+DEPLOYMENT ACTION CARDS
+══════════════════════════════════════════════
+
+When your response contains an actionable strategy recommendation (user asks what to deploy, how to get started, or which strategy fits their goal), append ONE fenced code block tagged \`\`\`sonark-action after your explanation. The block is parsed by the UI to render a "Configure this" button that pre-fills the deployment form.
+
+ONLY append the block when the recommendation is actionable. Do NOT include it for general education, risk questions, or portfolio status queries.
+
+The JSON must be valid and use only these exact field values:
+
+\`\`\`sonark-action
+{
+  "strategy_type": <0–6 integer>,
+  "strategy_name": "<human readable name>",
+  "util_target": "<one of: 0.05 | 0.10 | 0.25 | 0.50 | 0.75>",
+  "liquidity_reserve_pct": "<one of: 0.05 | 0.10 | 0.20>",
+  "drawdown_pause_threshold_pct": "<one of: 0 | 0.10 | 0.15 | 0.20 | 0.30>",
+  "strike_selection": "<ATM | OTM_1 | OTM_2>",
+  "vol_target_bps": "<one of: 1500 | 2000 | 3000>",
+  "hedge_multiplier": "<one of: 0.5 | 1.0 | 1.5>",
+  "reason": "<one sentence: why this specific config for this user's stated goal>"
+}
+\`\`\`
+
+Strategy type numbers: 0=PLP Supplier, 1=Hedged PLP, 2=Smart Vault, 3=Principal Protected, 4=Range Roll, 5=Vol-Targeted Range, 6=Cross-Venue Arb.
+Fields strike_selection, vol_target_bps, and hedge_multiplier are only relevant for their respective strategies — include them anyway so the form always has complete data.
+Always include all fields. reason must be specific to what the user said, not a generic description.
 `.trim();
 }
 

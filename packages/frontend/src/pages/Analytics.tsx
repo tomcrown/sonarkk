@@ -221,7 +221,7 @@ export default function Analytics() {
   const activeRegimeCol = activeCol[regime]
 
   return (
-    <div className="px-10 py-12 max-w-[1600px]">
+    <div className="px-4 sm:px-6 lg:px-10 py-6 lg:py-12 max-w-[1600px]">
       <div className="text-xs tracking-[0.2em] text-text-dim mb-3">INTELLIGENCE</div>
       <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase mb-10">
         Market Intel
@@ -418,7 +418,8 @@ export default function Analytics() {
         </div>
 
         <div className="rounded-xl overflow-hidden bg-card border border-border">
-          <div className="grid grid-cols-[1.6fr_1fr_1fr_1fr_2fr] gap-4 px-5 py-3 border-b border-border">
+          <div className="overflow-x-auto">
+          <div className="min-w-[600px] grid grid-cols-[1.6fr_1fr_1fr_1fr_2fr] gap-4 px-5 py-3 border-b border-border">
             <span className="text-[10px] uppercase tracking-wider text-text-dim">Strategy</span>
             {(['calm', 'normal', 'high'] as Regime[]).map((r) => (
               <span
@@ -435,7 +436,7 @@ export default function Analytics() {
             ))}
             <span className="text-[10px] uppercase tracking-wider text-text-dim">Key insight</span>
           </div>
-          <div className="divide-y divide-border/50">
+          <div className="min-w-[600px] divide-y divide-border/50">
             {REGIME_TABLE.map((row, i) => (
               <motion.div
                 key={row.label}
@@ -462,6 +463,7 @@ export default function Analytics() {
                 <span className="text-xs text-text-dim">{row.note}</span>
               </motion.div>
             ))}
+          </div>
           </div>
         </div>
         <p className="text-xs mt-3 text-text-dim italic">
