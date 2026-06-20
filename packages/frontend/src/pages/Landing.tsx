@@ -257,7 +257,7 @@ export default function Landing() {
 
         <div className="relative z-10 max-w-5xl text-center mt-20">
           {/* Pill */}
-          <motion.div
+          {/* <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
@@ -265,7 +265,7 @@ export default function Landing() {
           >
             <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
             Live on Sui testnet · keeper runs every expiry
-          </motion.div>
+          </motion.div> */}
 
           {/* Headline */}
           <h1 className="text-5xl md:text-7xl font-display font-medium tracking-tight leading-[1.05]">
@@ -510,22 +510,7 @@ export default function Landing() {
                 ))}
               </div>
 
-              {/* Honest disclosure */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                whileInView={{ opacity: 1 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.2 }}
-                className="mt-4 rounded-lg border p-4"
-                style={{
-                  borderColor: 'rgba(232,166,39,0.22)',
-                  background: 'rgba(232,166,39,0.04)',
-                }}
-              >
-                <p className="text-[11px] leading-relaxed" style={{ color: '#E8A627' }}>
-                  Short-vol strategies are profitable in calm markets and lose in volatility spikes. Labeled honestly before you deploy — not after.
-                </p>
-              </motion.div>
+     
             </div>
           </div>
         </div>
