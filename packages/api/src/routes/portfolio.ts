@@ -6,8 +6,21 @@
  */
 
 import { Router } from 'express';
+import { spawn } from 'child_process';
+import readline from 'readline';
+import { dirname, resolve } from 'path';
+import { fileURLToPath } from 'url';
+import { Transaction } from '@mysten/sui/transactions';
+import { SuiGrpcClient } from '@mysten/sui/grpc';
+import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { z } from 'zod';
 import { getPrismaClient } from '@sonarkk/core';
+import { env } from '../env.js';
+
+const __dir = dirname(fileURLToPath(import.meta.url));
+
+const CLOCK_ID = '0x0000000000000000000000000000000000000000000000000000000000000006';
+const EXPLORER_URL = 'https://testnet.suivision.xyz/txblock';
 
 export const portfolioRouter = Router();
 
@@ -130,6 +143,7 @@ function serializeCycle(c: {
   entryGuardSkipped: boolean;
   supplyTxDigest: string | null;
   settleTxDigest: string | null;
+  hedgeTxDigest: string | null;
   hedgeDirection: string | null;
   coverageRatioPct: number | null;
   volArbFired: boolean;
@@ -143,6 +157,9 @@ function serializeCycle(c: {
     pnlRaw: null,
     atmVol: c.atmVol,
     txDigest: c.supplyTxDigest ?? c.settleTxDigest ?? null,
+    hedgeTxDigest: c.hedgeTxDigest ?? null,
+    hedgeDirection: c.hedgeDirection ?? null,
+    coverageRatioPct: c.coverageRatioPct ?? null,
     status: c.status,
     errorMessage: c.skipReason ?? null,
     createdAt: c.createdAt.toISOString(),
@@ -369,6 +386,212 @@ portfolioRouter.post('/', async (req, res) => {
   }
 });
 
+// ── POST /portfolios/keeper-setup ─────────────────────────────────────────────
+// Keeper-signed on-chain setup for PP (strategy 3) and Margin Loop (strategy 7).
+// Called by the frontend after the user's 2 wallet signatures (create + deposit).
+// Executes: predict::create_manager + enable_principal_protected / enable_margin_loop
+// Returns: { manager_id, setup_tx_digest }
+
+const KeeperSetupBodySchema = z.object({
+  portfolio_id:    z.string().min(60),
+  policy_cap_id:   z.string().min(60),
+  strategy_type:   z.number().int().min(0).max(7),
+  deposit_raw:     z.string().regex(/^\d+$/),
+});
+
+portfolioRouter.post('/keeper-setup', async (req, res) => {
+  const parsed = KeeperSetupBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+    return;
+  }
+  const { portfolio_id, policy_cap_id, strategy_type, deposit_raw } = parsed.data;
+
+  if (strategy_type !== 3 && strategy_type !== 7) {
+    res.status(400).json({ error: 'keeper-setup only applies to strategies 3 (PP) and 7 (Margin Loop)' });
+    return;
+  }
+  if (!env.KEEPER_PRIVATE_KEY) {
+    res.status(503).json({ error: 'KEEPER_PRIVATE_KEY not set — keeper-setup unavailable' });
+    return;
+  }
+
+  let keypair: Ed25519Keypair;
+  try {
+    keypair = Ed25519Keypair.fromSecretKey(env.KEEPER_PRIVATE_KEY);
+  } catch {
+    try {
+      const bytes = Buffer.from(env.KEEPER_PRIVATE_KEY, 'base64');
+      keypair = Ed25519Keypair.fromSecretKey(bytes.slice(1));
+    } catch {
+      res.status(500).json({ error: 'Could not parse KEEPER_PRIVATE_KEY' });
+      return;
+    }
+  }
+
+  const client = new SuiGrpcClient({
+    network: (env.SUI_NETWORK ?? 'testnet') as 'testnet',
+    baseUrl: env.SUI_GRPC_URL ?? 'https://fullnode.testnet.sui.io:443',
+  });
+
+  const SONARK = env.SONARK_PACKAGE;
+  const PREDICT = env.PREDICT_PACKAGE;
+  const DUSDC = env.DUSDC_TYPE;
+  const depositRaw = BigInt(deposit_raw);
+
+  try {
+    const tx = new Transaction();
+
+    if (strategy_type === 3) {
+      // PP: enable_principal_protected + create_manager in one PTB
+      tx.moveCall({
+        target: `${SONARK}::portfolio::enable_principal_protected`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolio_id),
+          tx.pure.u64(depositRaw),
+          tx.object(policy_cap_id),
+          tx.object(CLOCK_ID),
+        ],
+      });
+    } else {
+      // Margin Loop: create_manager + enable_margin_loop in one PTB
+      if (!env.MOCK_MARGIN_ID) {
+        res.status(503).json({ error: 'MOCK_MARGIN_ID not set — Margin Loop setup unavailable' });
+        return;
+      }
+      tx.moveCall({
+        target: `${SONARK}::portfolio::enable_margin_loop`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolio_id),
+          tx.object(env.MOCK_MARGIN_ID),
+          tx.pure.u64(depositRaw / 2n), // lock 50% as collateral
+          tx.object(policy_cap_id),
+          tx.object(CLOCK_ID),
+        ],
+      });
+    }
+
+    // Also create PredictManager in the same PTB (shared via share_object internally)
+    tx.moveCall({
+      target: `${PREDICT}::predict::create_manager`,
+      typeArguments: [],
+      arguments: [],
+    });
+
+    const result = await client.core.signAndExecuteTransaction({
+      transaction: tx,
+      signer: keypair,
+      include: { effects: true },
+    });
+
+    if (result.$kind === 'FailedTransaction') {
+      res.status(500).json({ error: `keeper-setup TX failed: ${JSON.stringify(result.FailedTransaction?.status)}` });
+      return;
+    }
+
+    const digest = result.Transaction?.digest ?? '';
+    await client.core.waitForTransaction({ digest });
+
+    // Extract PredictManager shared object ID from effects
+    let managerId: string | null = null;
+    type ChangedObj = { idOperation?: string; objectId: string; outputOwner?: { $kind?: string } };
+    for (const obj of ((result.Transaction?.effects as { changedObjects?: ChangedObj[] })?.changedObjects ?? [])) {
+      if (obj.idOperation === 'Created' && obj.outputOwner?.$kind === 'Shared') {
+        managerId = obj.objectId;
+        break;
+      }
+    }
+
+    if (!managerId) {
+      // Fallback: re-scan changedObjects for any Shared-output created entry
+      for (const obj of ((result.Transaction?.effects as { changedObjects?: ChangedObj[] })?.changedObjects ?? [])) {
+        if (obj.idOperation === 'Created' && obj.outputOwner?.$kind === 'Shared') {
+          managerId = obj.objectId;
+          break;
+        }
+      }
+    }
+
+    // Update DB with managerId
+    if (managerId) {
+      const prisma = getPrismaClient();
+      await prisma.portfolio.updateMany({
+        where: { objectId: portfolio_id },
+        data: { managerId },
+      });
+    }
+
+    res.json({ manager_id: managerId, setup_tx_digest: digest });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ── POST /portfolios/:id/run-cycle ────────────────────────────────────────────
+// Forces one keeper cycle for demo purposes. Bypasses vol threshold.
+// SSE endpoint — streams NDJSON events from demo-cycle.ts subprocess.
+// Event shape: { type: 'progress'|'tx'|'done'|'error', ...fields }
+
+portfolioRouter.post('/:id/run-cycle', async (req, res) => {
+  const { id } = req.params;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const send = (data: Record<string, unknown>) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  // Path: packages/api/src/routes/ → ../../../../packages/keeper/src/demo-cycle.ts
+  const scriptPath = resolve(__dir, '../../../keeper/src/demo-cycle.ts');
+  // Use workspace tsx binary
+  const tsxBin = resolve(__dir, '../../../../node_modules/.bin/tsx');
+
+  let finished = false;
+
+  try {
+    const child = spawn(tsxBin, [scriptPath], {
+      env: { ...process.env, DEMO_PORTFOLIO_ID: id },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    const rl = readline.createInterface({ input: child.stdout! });
+    rl.on('line', (line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      try {
+        const event = JSON.parse(trimmed) as Record<string, unknown>;
+        send(event);
+        if (event['type'] === 'done' || event['type'] === 'error') finished = true;
+      } catch {
+        // non-JSON line from script — forward as progress
+        send({ type: 'progress', message: trimmed });
+      }
+    });
+
+    child.stderr?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString().trim();
+      if (text) send({ type: 'progress', message: `[stderr] ${text.slice(0, 200)}` });
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      child.on('close', (code) => {
+        if (code === 0 || finished) resolve();
+        else reject(new Error(`demo-cycle exited with code ${code}`));
+      });
+      child.on('error', reject);
+    });
+  } catch (err) {
+    send({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+  }
+
+  res.end();
+});
+
 // ── GET /portfolios/:id ────────────────────────────────────────────────────────
 
 portfolioRouter.get('/:id', async (req, res) => {
@@ -395,6 +618,7 @@ portfolioRouter.get('/:id', async (req, res) => {
             entryGuardSkipped: true,
             supplyTxDigest: true,
             settleTxDigest: true,
+            hedgeTxDigest: true,
             hedgeDirection: true,
             coverageRatioPct: true,
             volArbFired: true,

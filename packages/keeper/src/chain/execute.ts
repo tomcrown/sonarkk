@@ -120,55 +120,57 @@ export async function executeSupplyCycle(
     throw new Error('executeSupplyCycle called with zero supply amount');
   }
 
-  const tx = new Transaction();
-
-  // 1. Push NAV per share so the deposit contract can price new shares correctly.
-  tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::update_nav`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(portfolioId),
-      tx.pure.u64(navPerShare),
-      tx.object(policyCapId),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
-  // 2. Take DUSDC from portfolio → supply to Predict → get PLP → store back.
-  const dusdc_coin = tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::take_for_supply`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(portfolioId),
-      tx.pure.u64(supplyAmount),
-      tx.object(policyCapId),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
-  const plp_coin = tx.moveCall({
-    target: `${PREDICT_PKG()}::predict::supply`,
-    typeArguments: [DUSDC],
-    arguments: [tx.object(PREDICT_OBJ()), dusdc_coin, tx.object(CLOCK_ID)],
-  });
-
-  tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::store_lp`,
-    typeArguments: [DUSDC, PLP_TYPE],
-    arguments: [
-      tx.object(portfolioId),
-      plp_coin,
-      tx.object(policyCapId),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
   const result = await withRetry(
-    () => client.core.signAndExecuteTransaction({
-      transaction: tx,
-      signer: keypair,
-      include: { effects: true },
-    }),
+    async () => {
+      const tx = new Transaction();
+
+      // 1. Push NAV per share so the deposit contract can price new shares correctly.
+      tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::update_nav`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolioId),
+          tx.pure.u64(navPerShare),
+          tx.object(policyCapId),
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      // 2. Take DUSDC from portfolio → supply to Predict → get PLP → store back.
+      const dusdc_coin = tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::take_for_supply`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolioId),
+          tx.pure.u64(supplyAmount),
+          tx.object(policyCapId),
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      const plp_coin = tx.moveCall({
+        target: `${PREDICT_PKG()}::predict::supply`,
+        typeArguments: [DUSDC],
+        arguments: [tx.object(PREDICT_OBJ()), dusdc_coin, tx.object(CLOCK_ID)],
+      });
+
+      tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::store_lp`,
+        typeArguments: [DUSDC, PLP_TYPE],
+        arguments: [
+          tx.object(portfolioId),
+          plp_coin,
+          tx.object(policyCapId),
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      return client.core.signAndExecuteTransaction({
+        transaction: tx,
+        signer: keypair,
+        include: { effects: true },
+      });
+    },
     `executeSupplyCycle(${portfolioId.slice(0, 8)}...)`,
   );
 
@@ -207,37 +209,39 @@ export async function executeRedeemLp(
   policyCapId: string,
   lpBalanceRaw: bigint,
 ): Promise<string> {
-  const tx = new Transaction();
-
-  const plpCoin = tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::take_lp`,
-    typeArguments: [DUSDC, PLP_TYPE],
-    arguments: [
-      tx.object(portfolioId),
-      tx.pure.u64(lpBalanceRaw),
-      tx.object(policyCapId),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
-  const dusdcCoin = tx.moveCall({
-    target: `${PREDICT_PKG()}::predict::withdraw`,
-    typeArguments: [DUSDC],
-    arguments: [tx.object(PREDICT_OBJ()), plpCoin, tx.object(CLOCK_ID)],
-  });
-
-  tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::store_quote`,
-    typeArguments: [DUSDC],
-    arguments: [tx.object(portfolioId), dusdcCoin],
-  });
-
   const result = await withRetry(
-    () => client.core.signAndExecuteTransaction({
-      transaction: tx,
-      signer: keypair,
-      include: { effects: true },
-    }),
+    async () => {
+      const tx = new Transaction();
+
+      const plpCoin = tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::take_lp`,
+        typeArguments: [DUSDC, PLP_TYPE],
+        arguments: [
+          tx.object(portfolioId),
+          tx.pure.u64(lpBalanceRaw),
+          tx.object(policyCapId),
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      const dusdcCoin = tx.moveCall({
+        target: `${PREDICT_PKG()}::predict::withdraw`,
+        typeArguments: [DUSDC],
+        arguments: [tx.object(PREDICT_OBJ()), plpCoin, tx.object(CLOCK_ID)],
+      });
+
+      tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::store_quote`,
+        typeArguments: [DUSDC],
+        arguments: [tx.object(portfolioId), dusdcCoin],
+      });
+
+      return client.core.signAndExecuteTransaction({
+        transaction: tx,
+        signer: keypair,
+        include: { effects: true },
+      });
+    },
     `executeRedeemLp(${portfolioId.slice(0, 8)}...)`,
   );
 
@@ -295,71 +299,73 @@ export async function executeRangeCycle(
   const lowerStrikeRaw = (forwardRaw * (10000n - rangeWidthBps) / 10000n / TICK) * TICK;
   const upperStrikeRaw = (forwardRaw * (10000n + rangeWidthBps) / 10000n / TICK) * TICK;
 
-  const tx = new Transaction();
-
-  // 1. Push NAV.
-  tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::update_nav`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(portfolioId),
-      tx.pure.u64(navPerShare),
-      tx.object(policyCapId),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
-  // 2. Take DUSDC from portfolio for the bet.
-  const payment = tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::take_for_bettor`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(portfolioId),
-      tx.pure.u64(notional),
-      tx.object(policyCapId),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
-  // 3. Deposit DUSDC into PredictManager (manager holds balance; mint debits it).
-  tx.moveCall({
-    target: `${PREDICT_PKG()}::predict_manager::deposit`,
-    typeArguments: [DUSDC],
-    arguments: [tx.object(managerId), payment],
-  });
-
-  // 4. Build RangeKey: range_key::new(oracle_id: ID, expiry: u64, lower: u64, upper: u64)
-  const rangeKey = tx.moveCall({
-    target: `${PREDICT_PKG()}::range_key::new`,
-    typeArguments: [],
-    arguments: [
-      tx.pure.id(oracleId),
-      tx.pure.u64(expiryMs),
-      tx.pure.u64(lowerStrikeRaw),
-      tx.pure.u64(upperStrikeRaw),
-    ],
-  });
-
-  // 5. Mint range position — deducts cost from manager's internal balance; returns void.
-  tx.moveCall({
-    target: `${PREDICT_PKG()}::predict::mint_range`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(PREDICT_OBJ()),
-      tx.object(managerId),
-      tx.object(oracleId),
-      rangeKey,
-      tx.pure.u64(notional),  // amount = position size (same units as payout)
-      tx.object(CLOCK_ID),
-    ],
-  });
-
   const result = await withRetry(
-    () => client.core.signAndExecuteTransaction({
-      transaction: tx,
-      signer: keypair,
-      include: { effects: true },
-    }),
+    async () => {
+      const tx = new Transaction();
+
+      // 1. Push NAV.
+      tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::update_nav`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolioId),
+          tx.pure.u64(navPerShare),
+          tx.object(policyCapId),
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      // 2. Take DUSDC from portfolio for the bet.
+      const payment = tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::take_for_bettor`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolioId),
+          tx.pure.u64(notional),
+          tx.object(policyCapId),
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      // 3. Deposit DUSDC into PredictManager (manager holds balance; mint debits it).
+      tx.moveCall({
+        target: `${PREDICT_PKG()}::predict_manager::deposit`,
+        typeArguments: [DUSDC],
+        arguments: [tx.object(managerId), payment],
+      });
+
+      // 4. Build RangeKey: range_key::new(oracle_id: ID, expiry: u64, lower: u64, upper: u64)
+      const rangeKey = tx.moveCall({
+        target: `${PREDICT_PKG()}::range_key::new`,
+        typeArguments: [],
+        arguments: [
+          tx.pure.id(oracleId),
+          tx.pure.u64(expiryMs),
+          tx.pure.u64(lowerStrikeRaw),
+          tx.pure.u64(upperStrikeRaw),
+        ],
+      });
+
+      // 5. Mint range position — deducts cost from manager's internal balance; returns void.
+      tx.moveCall({
+        target: `${PREDICT_PKG()}::predict::mint_range`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(PREDICT_OBJ()),
+          tx.object(managerId),
+          tx.object(oracleId),
+          rangeKey,
+          tx.pure.u64(notional),  // amount = position size (same units as payout)
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      return client.core.signAndExecuteTransaction({
+        transaction: tx,
+        signer: keypair,
+        include: { effects: true },
+      });
+    },
     `executeRangeCycle(${portfolioId.slice(0, 8)}...)`,
   );
 
@@ -417,70 +423,72 @@ export async function executeBinaryCycle(
 
   const strikeRaw = computeBinaryStrike(forwardRaw, strikeSelection, isCall);
 
-  const tx = new Transaction();
-
-  // 1. Push NAV.
-  tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::update_nav`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(portfolioId),
-      tx.pure.u64(navPerShare),
-      tx.object(policyCapId),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
-  // 2. Take DUSDC from portfolio for the bet.
-  const payment = tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::take_for_bettor`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(portfolioId),
-      tx.pure.u64(notional),
-      tx.object(policyCapId),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
-  // 3. Deposit DUSDC into PredictManager.
-  tx.moveCall({
-    target: `${PREDICT_PKG()}::predict_manager::deposit`,
-    typeArguments: [DUSDC],
-    arguments: [tx.object(managerId), payment],
-  });
-
-  // 4. Build MarketKey: market_key::up/down(oracle_id: ID, expiry: u64, strike: u64)
-  const marketKeyObj = tx.moveCall({
-    target: `${PREDICT_PKG()}::market_key::${isCall ? 'up' : 'down'}`,
-    typeArguments: [],
-    arguments: [
-      tx.pure.id(oracleId),
-      tx.pure.u64(expiryMs),
-      tx.pure.u64(strikeRaw),
-    ],
-  });
-
-  // 5. Mint binary position — debits cost from manager's internal balance; returns void.
-  tx.moveCall({
-    target: `${PREDICT_PKG()}::predict::mint`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(PREDICT_OBJ()),
-      tx.object(managerId),
-      tx.object(oracleId),
-      marketKeyObj,
-      tx.pure.u64(notional),  // amount = position size
-      tx.object(CLOCK_ID),
-    ],
-  });
-
   const result = await withRetry(
-    () => client.core.signAndExecuteTransaction({
-      transaction: tx,
-      signer: keypair,
-      include: { effects: true },
-    }),
+    async () => {
+      const tx = new Transaction();
+
+      // 1. Push NAV.
+      tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::update_nav`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolioId),
+          tx.pure.u64(navPerShare),
+          tx.object(policyCapId),
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      // 2. Take DUSDC from portfolio for the bet.
+      const payment = tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::take_for_bettor`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolioId),
+          tx.pure.u64(notional),
+          tx.object(policyCapId),
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      // 3. Deposit DUSDC into PredictManager.
+      tx.moveCall({
+        target: `${PREDICT_PKG()}::predict_manager::deposit`,
+        typeArguments: [DUSDC],
+        arguments: [tx.object(managerId), payment],
+      });
+
+      // 4. Build MarketKey: market_key::up/down(oracle_id: ID, expiry: u64, strike: u64)
+      const marketKeyObj = tx.moveCall({
+        target: `${PREDICT_PKG()}::market_key::${isCall ? 'up' : 'down'}`,
+        typeArguments: [],
+        arguments: [
+          tx.pure.id(oracleId),
+          tx.pure.u64(expiryMs),
+          tx.pure.u64(strikeRaw),
+        ],
+      });
+
+      // 5. Mint binary position — debits cost from manager's internal balance; returns void.
+      tx.moveCall({
+        target: `${PREDICT_PKG()}::predict::mint`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(PREDICT_OBJ()),
+          tx.object(managerId),
+          tx.object(oracleId),
+          marketKeyObj,
+          tx.pure.u64(notional),  // amount = position size
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      return client.core.signAndExecuteTransaction({
+        transaction: tx,
+        signer: keypair,
+        include: { effects: true },
+      });
+    },
     `executeBinaryCycle(${portfolioId.slice(0, 8)}...)`,
   );
 
@@ -540,105 +548,112 @@ export async function executePrincipalProtectedCycle(
   forwardRaw: bigint,
   mockLendingId: string,
   navPerShare: bigint,
-  keeperDusdcCoinId: string,  // keeper's DUSDC coin object to inject yield (testnet simulation)
   yieldAmountRaw: bigint,     // pre-computed yield to inject (from preview_yield)
 ): Promise<PrincipalProtectedExecuteResult> {
   if (yieldAmountRaw <= 0n) {
     throw new Error('executePrincipalProtectedCycle called with zero yield');
   }
 
+  const keeperAddress = keypair.getPublicKey().toSuiAddress();
   const TICK = 1_000_000_000n;
   const lowerStrikeRaw = (forwardRaw * 90n / 100n / TICK) * TICK;  // -10%
   const upperStrikeRaw = (forwardRaw * 110n / 100n / TICK) * TICK; // +10%
 
-  const tx = new Transaction();
-
-  // 1. Push NAV.
-  tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::update_nav`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(portfolioId),
-      tx.pure.u64(navPerShare),
-      tx.object(policyCapId),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
-  // 2. Claim yield from MockLending (updates last_claimed_ms in receipt).
-  tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::claim_yield_from_lending`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(portfolioId),
-      tx.object(mockLendingId),
-      tx.object(policyCapId),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
-  // 3. Keeper injects yield DUSDC into portfolio (simulates IronBank payout on testnet).
-  const [yield_coin] = tx.splitCoins(
-    tx.object(keeperDusdcCoinId),
-    [tx.pure.u64(yieldAmountRaw)],
-  );
-  tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::store_quote`,
-    typeArguments: [DUSDC],
-    arguments: [tx.object(portfolioId), yield_coin],
-  });
-
-  // 4. Take yield DUSDC back out for betting (principal enforcement: only yield, never principal).
-  const bet_coin = tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::take_yield_for_bet`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(portfolioId),
-      tx.pure.u64(yieldAmountRaw),
-      tx.object(policyCapId),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
-  // 5. Fund manager with the yield coin.
-  tx.moveCall({
-    target: `${PREDICT_PKG()}::predict_manager::deposit`,
-    typeArguments: [DUSDC],
-    arguments: [tx.object(managerId), bet_coin],
-  });
-
-  // 6. Build RangeKey ±10% ATM for the yield bet.
-  const rangeKey = tx.moveCall({
-    target: `${PREDICT_PKG()}::range_key::new`,
-    typeArguments: [],
-    arguments: [
-      tx.pure.id(oracleId),
-      tx.pure.u64(expiryMs),
-      tx.pure.u64(lowerStrikeRaw),
-      tx.pure.u64(upperStrikeRaw),
-    ],
-  });
-
-  // 7. Mint range — deducts cost from manager balance; returns void.
-  tx.moveCall({
-    target: `${PREDICT_PKG()}::predict::mint_range`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(PREDICT_OBJ()),
-      tx.object(managerId),
-      tx.object(oracleId),
-      rangeKey,
-      tx.pure.u64(yieldAmountRaw),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
   const result = await withRetry(
-    () => client.core.signAndExecuteTransaction({
-      transaction: tx,
-      signer: keypair,
-      include: { effects: true },
-    }),
+    async () => {
+      // Re-fetch keeper DUSDC coin on every attempt — object version changes between retries.
+      const coins = await client.core.listCoins({ owner: keeperAddress, coinType: DUSDC });
+      const keeperCoin = coins.objects.find(c => BigInt(c.balance) >= yieldAmountRaw);
+      if (!keeperCoin) throw new Error(`Keeper has insufficient DUSDC for yield injection (need ${yieldAmountRaw} raw)`);
+
+      const tx = new Transaction();
+
+      // 1. Push NAV.
+      tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::update_nav`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolioId),
+          tx.pure.u64(navPerShare),
+          tx.object(policyCapId),
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      // 2. Claim yield from MockLending (updates last_claimed_ms in receipt).
+      tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::claim_yield_from_lending`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolioId),
+          tx.object(mockLendingId),
+          tx.object(policyCapId),
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      // 3. Keeper injects yield DUSDC into portfolio (simulates IronBank payout on testnet).
+      const [yield_coin] = tx.splitCoins(
+        tx.object(keeperCoin.objectId),
+        [tx.pure.u64(yieldAmountRaw)],
+      );
+      tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::store_quote`,
+        typeArguments: [DUSDC],
+        arguments: [tx.object(portfolioId), yield_coin],
+      });
+
+      // 4. Take yield DUSDC back out for betting (principal enforcement: only yield, never principal).
+      const bet_coin = tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::take_yield_for_bet`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolioId),
+          tx.pure.u64(yieldAmountRaw),
+          tx.object(policyCapId),
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      // 5. Fund manager with the yield coin.
+      tx.moveCall({
+        target: `${PREDICT_PKG()}::predict_manager::deposit`,
+        typeArguments: [DUSDC],
+        arguments: [tx.object(managerId), bet_coin],
+      });
+
+      // 6. Build RangeKey ±10% ATM for the yield bet.
+      const rangeKey = tx.moveCall({
+        target: `${PREDICT_PKG()}::range_key::new`,
+        typeArguments: [],
+        arguments: [
+          tx.pure.id(oracleId),
+          tx.pure.u64(expiryMs),
+          tx.pure.u64(lowerStrikeRaw),
+          tx.pure.u64(upperStrikeRaw),
+        ],
+      });
+
+      // 7. Mint range — deducts cost from manager balance; returns void.
+      tx.moveCall({
+        target: `${PREDICT_PKG()}::predict::mint_range`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(PREDICT_OBJ()),
+          tx.object(managerId),
+          tx.object(oracleId),
+          rangeKey,
+          tx.pure.u64(yieldAmountRaw),
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      return client.core.signAndExecuteTransaction({
+        transaction: tx,
+        signer: keypair,
+        include: { effects: true },
+      });
+    },
     `executePrincipalProtectedCycle(${portfolioId.slice(0, 8)}...)`,
   );
 
@@ -698,26 +713,28 @@ export async function enableMarginLoopOnchain(
   mockMarginId: string,
   collateralAmountRaw: bigint,
 ): Promise<MarginLoopSetupResult> {
-  const tx = new Transaction();
-
-  tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::enable_margin_loop`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(portfolioId),
-      tx.object(mockMarginId),
-      tx.pure.u64(collateralAmountRaw),
-      tx.object(policyCapId),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
   const result = await withRetry(
-    () => client.core.signAndExecuteTransaction({
-      transaction: tx,
-      signer: keypair,
-      include: { effects: true },
-    }),
+    async () => {
+      const tx = new Transaction();
+
+      tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::enable_margin_loop`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolioId),
+          tx.object(mockMarginId),
+          tx.pure.u64(collateralAmountRaw),
+          tx.object(policyCapId),
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      return client.core.signAndExecuteTransaction({
+        transaction: tx,
+        signer: keypair,
+        include: { effects: true },
+      });
+    },
     `enableMarginLoop(${portfolioId.slice(0, 8)}...)`,
   );
 
@@ -778,76 +795,78 @@ export async function executeMarginLoopCycle(
   const lowerStrikeRaw = (forwardRaw * (100n - rangeHalfBps) / 100n / TICK) * TICK;
   const upperStrikeRaw = (forwardRaw * (100n + rangeHalfBps) / 100n / TICK) * TICK;
 
-  const tx = new Transaction();
-
-  // (a) Update NAV
-  tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::update_nav`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(portfolioId),
-      tx.pure.u64(navPerShare),
-      tx.object(policyCapId),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
-  // (b) Repay prior borrow from settled payout already in quote_balance (skip if first cycle)
-  if (repayAmountRaw > 0n) {
-    tx.moveCall({
-      target: `${SONARK_PKG()}::portfolio::repay_margin_borrow`,
-      typeArguments: [DUSDC],
-      arguments: [
-        tx.object(portfolioId),
-        tx.object(mockMarginId),
-        tx.pure.u64(repayAmountRaw),
-        tx.object(policyCapId),
-        tx.object(CLOCK_ID),
-      ],
-    });
-  }
-
-  // (c) Borrow from margin for this cycle's Predict bet
-  const borrowed = tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::take_for_margin_borrow`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(portfolioId),
-      tx.object(mockMarginId),
-      tx.pure.u64(borrowAmountRaw),
-      tx.object(policyCapId),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
-  // (f) Mint range position using borrowed DUSDC
-  const change = tx.moveCall({
-    target: `${PREDICT_PKG()}::predict::mint_range`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(env.PREDICT_OBJECT),
-      tx.object(managerId),
-      tx.object(oracleId),
-      tx.pure.u64(lowerStrikeRaw),
-      tx.pure.u64(upperStrikeRaw),
-      borrowed,
-      tx.object(CLOCK_ID),
-    ],
-  });
-
-  // (g) Store unused premium change back in portfolio
-  tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::store_quote`,
-    typeArguments: [DUSDC],
-    arguments: [tx.object(portfolioId), change],
-  });
-
   const result = await withRetry(
-    () => client.core.signAndExecuteTransaction({
-      transaction: tx,
-      signer: keypair,
-      include: { effects: true },
-    }),
+    async () => {
+      const tx = new Transaction();
+
+      // (a) Update NAV
+      tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::update_nav`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolioId),
+          tx.pure.u64(navPerShare),
+          tx.object(policyCapId),
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      // (b) Repay prior borrow from settled payout already in quote_balance (skip if first cycle)
+      if (repayAmountRaw > 0n) {
+        tx.moveCall({
+          target: `${SONARK_PKG()}::portfolio::repay_margin_borrow`,
+          typeArguments: [DUSDC],
+          arguments: [
+            tx.object(portfolioId),
+            tx.object(mockMarginId),
+            tx.pure.u64(repayAmountRaw),
+            tx.object(policyCapId),
+            tx.object(CLOCK_ID),
+          ],
+        });
+      }
+
+      // (c) Borrow from margin for this cycle's Predict bet
+      const borrowed = tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::take_for_margin_borrow`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolioId),
+          tx.object(mockMarginId),
+          tx.pure.u64(borrowAmountRaw),
+          tx.object(policyCapId),
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      // (f) Mint range position using borrowed DUSDC
+      const change = tx.moveCall({
+        target: `${PREDICT_PKG()}::predict::mint_range`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(env.PREDICT_OBJECT),
+          tx.object(managerId),
+          tx.object(oracleId),
+          tx.pure.u64(lowerStrikeRaw),
+          tx.pure.u64(upperStrikeRaw),
+          borrowed,
+          tx.object(CLOCK_ID),
+        ],
+      });
+
+      // (g) Store unused premium change back in portfolio
+      tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::store_quote`,
+        typeArguments: [DUSDC],
+        arguments: [tx.object(portfolioId), change],
+      });
+
+      return client.core.signAndExecuteTransaction({
+        transaction: tx,
+        signer: keypair,
+        include: { effects: true },
+      });
+    },
     `executeMarginLoop(${portfolioId.slice(0, 8)}...)`,
   );
 
@@ -886,24 +905,25 @@ export async function pushNavOnly(
   policyCapId: string,
   navPerShare: bigint,
 ): Promise<string> {
-  const tx = new Transaction();
-  tx.moveCall({
-    target: `${SONARK_PKG()}::portfolio::update_nav`,
-    typeArguments: [DUSDC],
-    arguments: [
-      tx.object(portfolioId),
-      tx.pure.u64(navPerShare),
-      tx.object(policyCapId),
-      tx.object(CLOCK_ID),
-    ],
-  });
-
   const result = await withRetry(
-    () => client.core.signAndExecuteTransaction({
-      transaction: tx,
-      signer: keypair,
-      include: { effects: true },
-    }),
+    async () => {
+      const tx = new Transaction();
+      tx.moveCall({
+        target: `${SONARK_PKG()}::portfolio::update_nav`,
+        typeArguments: [DUSDC],
+        arguments: [
+          tx.object(portfolioId),
+          tx.pure.u64(navPerShare),
+          tx.object(policyCapId),
+          tx.object(CLOCK_ID),
+        ],
+      });
+      return client.core.signAndExecuteTransaction({
+        transaction: tx,
+        signer: keypair,
+        include: { effects: true },
+      });
+    },
     `pushNavOnly(${portfolioId.slice(0, 8)}...)`,
   );
 
@@ -953,21 +973,21 @@ export async function createPredictManager(
   client: SuiGrpcClient,
   keypair: Ed25519Keypair,
 ): Promise<string> {
-  const tx = new Transaction();
-
-  // create_manager(ctx: &mut TxContext) → ID  — ctx is implicit in PTBs
-  tx.moveCall({
-    target: `${PREDICT_PKG()}::predict::create_manager`,
-    typeArguments: [],
-    arguments: [],
-  });
-
   const result = await withRetry(
-    () => client.core.signAndExecuteTransaction({
-      transaction: tx,
-      signer: keypair,
-      include: { effects: true },
-    }),
+    async () => {
+      const tx = new Transaction();
+      // create_manager(ctx: &mut TxContext) → ID  — ctx is implicit in PTBs
+      tx.moveCall({
+        target: `${PREDICT_PKG()}::predict::create_manager`,
+        typeArguments: [],
+        arguments: [],
+      });
+      return client.core.signAndExecuteTransaction({
+        transaction: tx,
+        signer: keypair,
+        include: { effects: true },
+      });
+    },
     'createPredictManager',
   );
 

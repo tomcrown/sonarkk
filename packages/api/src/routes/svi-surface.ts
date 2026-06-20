@@ -74,7 +74,7 @@ sviSurfaceRouter.get('/', async (_req, res) => {
     for (let i = 0; i < futureOracles.length; i++) {
       const oracle = futureOracles[i]!;
       const sviResult = sviResults[i];
-      if (sviResult.status !== 'fulfilled') continue;
+      if (!sviResult || sviResult.status !== 'fulfilled') continue;
       const rawSvi = sviResult.value[0];
       if (!rawSvi) continue;
 

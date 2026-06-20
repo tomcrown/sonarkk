@@ -231,6 +231,9 @@ export interface KeeperCycle {
   pnlRaw: string | null
   atmVol: number | null
   txDigest: string | null
+  hedgeTxDigest: string | null
+  hedgeDirection: string | null
+  coverageRatioPct: number | null
   status: string
   errorMessage: string | null
   createdAt: string
@@ -394,6 +397,19 @@ export interface CreatePortfolioBody {
   hedge_multiplier?: number
 }
 
+export interface KeeperSetupBody {
+  portfolio_id: string
+  policy_cap_id: string
+  strategy_type: number
+  deposit_raw: string
+}
+
+export type RunCycleEvent =
+  | { type: 'progress'; message: string }
+  | { type: 'tx'; protocol: string; label: string; digest: string; url: string }
+  | { type: 'done'; cycleId: string; supplyTxDigest: string | null; hedgeTxDigest: string | null; hedgeDirection: string | null; coverageRatioPct: number | null }
+  | { type: 'error'; message: string }
+
 export interface ChainConfig {
   keeperAddress: string | null
   sonarkPackage: string
@@ -477,6 +493,48 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+
+    keeperSetup: (body: KeeperSetupBody) =>
+      apiFetch<{ manager_id: string | null; setup_tx_digest: string; error?: string }>('/portfolios/keeper-setup', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    streamRunCycle: async function* (portfolioId: string): AsyncGenerator<RunCycleEvent> {
+      const res = await fetch(`${API_BASE}/portfolios/${portfolioId}/run-cycle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (!res.ok) throw new Error(`run-cycle API ${res.status}`)
+      if (!res.body) throw new Error('No response body')
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const raw = line.slice(6).trim()
+              if (!raw) continue
+              try {
+                yield JSON.parse(raw) as RunCycleEvent
+              } catch {
+                // ignore malformed
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock()
+      }
+    },
 
     activity: (walletAddress: string, limit = 10) =>
       apiFetch<ActivityItem[]>(

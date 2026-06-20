@@ -19,40 +19,37 @@ interface Block {
 
 const COMPOSITION: Record<number, Block[]> = {
   0: [
-    { label: 'PLP SUPPLY', color: '#A9A8EC' },
+    { label: 'DeepBook Predict', color: '#A9A8EC' },
   ],
   1: [
-    { label: 'PLP SUPPLY', color: '#A9A8EC' },
-    { label: 'SPOT DELTA HEDGE', color: '#D4CDF9' },
+    { label: 'DeepBook Predict', color: '#A9A8EC' },
+    { label: 'DeepBook Spot', color: '#6ee7b7' },
   ],
   2: [
-    { label: 'PLP SUPPLY', color: '#A9A8EC' },
-    { label: 'SPOT DELTA HEDGE', color: '#D4CDF9' },
-    { label: 'AUTO REBALANCE', color: '#A9A8EC' },
+    { label: 'DeepBook Predict', color: '#A9A8EC' },
+    { label: 'DeepBook Spot', color: '#6ee7b7' },
+    { label: 'Auto-Rebalance', color: '#D4CDF9' },
   ],
   3: [
-    { label: 'SAFE LENDING', color: '#3DD68C' },
-    { label: 'YIELD POOL', color: '#3DD68C' },
-    { label: 'PREDICT BET', color: '#A9A8EC' },
+    { label: 'Iron Bank', color: '#3DD68C' },
+    { label: 'DeepBook Predict', color: '#A9A8EC' },
   ],
   4: [
-    { label: 'RANGE POSITION', color: '#E8A627' },
-    { label: 'AUTO-ROLL', color: '#E8A627' },
+    { label: 'DeepBook Predict', color: '#E8A627' },
+    { label: 'Auto-Roll', color: '#E8A627' },
   ],
   5: [
-    { label: 'RANGE POSITION', color: '#E8A627' },
-    { label: 'VOL-BASED SIZING', color: '#fbbf24' },
-    { label: 'VOL ORACLE', color: '#A9A8EC' },
+    { label: 'DeepBook Predict', color: '#E8A627' },
+    { label: 'SVI Vol Oracle', color: '#A9A8EC' },
   ],
   6: [
-    { label: 'REFERENCE FEED', color: '#E8A627' },
-    { label: 'SELL VOLATILITY', color: '#F04438' },
-    { label: 'SPOT HEDGE', color: '#A9A8EC' },
+    { label: 'DeepBook Predict', color: '#A9A8EC' },
+    { label: 'DeepBook Spot', color: '#6ee7b7' },
+    { label: 'Hyperliquid (ref)', color: '#94a3b8' },
   ],
   7: [
-    { label: 'COLLATERAL', color: '#F97316' },
-    { label: 'BORROW', color: '#F97316' },
-    { label: 'RANGE POSITION', color: '#E8A627' },
+    { label: 'deepbook_margin', color: '#F97316' },
+    { label: 'DeepBook Predict', color: '#A9A8EC' },
   ],
 }
 

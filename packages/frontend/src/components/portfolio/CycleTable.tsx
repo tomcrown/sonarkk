@@ -7,6 +7,7 @@ import { cn } from '@/lib/cn'
 
 interface CycleTableProps {
   cycles: KeeperCycle[]
+  strategyType?: number
 }
 
 function statusVariant(status: string): 'live' | 'success' | 'danger' | 'muted' {
@@ -16,7 +17,28 @@ function statusVariant(status: string): 'live' | 'success' | 'danger' | 'muted' 
   return 'muted'
 }
 
-export function CycleTable({ cycles }: CycleTableProps) {
+function TxLink({ digest, label, color }: { digest: string; label: string; color?: string }) {
+  return (
+    <a
+      href={txUrl(digest)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded border transition-colors hover:opacity-80"
+      style={{
+        color: color ?? '#A9A8EC',
+        borderColor: `${color ?? '#A9A8EC'}44`,
+        background: `${color ?? '#A9A8EC'}0f`,
+      }}
+      title={digest}
+    >
+      {label} <ExternalLink className="w-2.5 h-2.5" />
+    </a>
+  )
+}
+
+export function CycleTable({ cycles, strategyType }: CycleTableProps) {
+  const isHedged = strategyType === 1 || strategyType === 2
+
   if (cycles.length === 0) {
     return <p className="text-sm text-[#58586A] py-4">No cycles recorded yet.</p>
   }
@@ -26,7 +48,7 @@ export function CycleTable({ cycles }: CycleTableProps) {
       <table className="w-full text-sm" aria-label="Keeper cycle history">
         <thead>
           <tr className="border-b border-[rgba(255,255,255,0.06)]">
-            {['Time', 'Action', 'PnL', 'ATM Vol', 'Status', 'Tx'].map((h) => (
+            {['Time', 'Action', 'PnL', 'ATM Vol', 'Status', 'Transactions'].map((h) => (
               <th
                 key={h}
                 className="pb-2 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-[#58586A]"
@@ -65,24 +87,35 @@ export function CycleTable({ cycles }: CycleTableProps) {
                 </Badge>
               </td>
               <td className="py-2.5">
-                {cycle.txDigest ? (
-                  <a
-                    href={txUrl(cycle.txDigest)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[#A9A8EC] hover:text-[#D4CDF9] transition-colors"
-                    aria-label={`View transaction ${cycle.txDigest.slice(0, 8)}`}
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                ) : (
-                  <span className="text-[#58586A]">—</span>
-                )}
+                <div className="flex flex-col gap-1">
+                  {cycle.txDigest && (
+                    <TxLink
+                      digest={cycle.txDigest}
+                      label="Predict ↗"
+                      color="#A9A8EC"
+                    />
+                  )}
+                  {cycle.hedgeTxDigest && (
+                    <TxLink
+                      digest={cycle.hedgeTxDigest}
+                      label={`Spot hedge ${cycle.hedgeDirection === 'long' ? '↑' : cycle.hedgeDirection === 'short' ? '↓' : ''}${cycle.coverageRatioPct != null ? ` ${cycle.coverageRatioPct.toFixed(0)}%` : ''}`}
+                      color="#6ee7b7"
+                    />
+                  )}
+                  {!cycle.txDigest && !cycle.hedgeTxDigest && (
+                    <span className="text-[#58586A] text-xs">—</span>
+                  )}
+                </div>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+      {isHedged && (
+        <p className="text-[10px] text-[#58586A] mt-3">
+          Hedged PLP fires two separate transactions per cycle: one to DeepBook Predict (supply), one to DeepBook Spot (delta hedge).
+        </p>
+      )}
     </div>
   )
 }

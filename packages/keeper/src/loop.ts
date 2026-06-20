@@ -636,21 +636,11 @@ async function processPortfolio(input: PortfolioInput): Promise<void> {
         return;
       }
 
-      // Find keeper's DUSDC coin for yield injection.
-      const keeperCoins = await client.core.listCoins({ owner: keeperAddress, coinType: DUSDC });
-      const dusdcCoin = keeperCoins.objects.find(c => BigInt(c.balance) >= sizing.size_raw);
-      if (!dusdcCoin) {
-        log.warn({ portfolioId, need: sizing.size_raw }, 'keeper has insufficient DUSDC for yield injection');
-        await skipWithRecord(portfolio.id, oracle_id, expiryBigInt, 'keeper_insufficient_dusdc',
-          { settleTxDigest, navComponents, vaultState, chainState, bettorMtm });
-        return;
-      }
-
       const ppResult = await executePrincipalProtectedCycle(
         client, keypair, portfolioId, policyCapId, managerId, oracle_id,
         BigInt(activeOracleState.expiry_ms), activeOracleState.forward_raw,
         env.MOCK_LENDING_ID, navComponents.nav_per_share,
-        dusdcCoin.objectId, sizing.size_raw,
+        sizing.size_raw,
       );
       supplyTxDigest = ppResult.tx_digest;
       newPositionKey = ppResult.market_key;

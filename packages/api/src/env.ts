@@ -33,6 +33,10 @@ const schema = z.object({
   // Walrus testnet endpoints.
   WALRUS_PUBLISHER_URL:  z.string().default('https://publisher.walrus-testnet.walrus.space'),
   WALRUS_AGGREGATOR_URL: z.string().default('https://aggregator.walrus-testnet.walrus.space'),
+
+  // MockLending and MockMargin shared object IDs (for PP + Margin Loop keeper-setup).
+  MOCK_LENDING_ID: z.preprocess(v => v || undefined, z.string().optional()),
+  MOCK_MARGIN_ID:  z.preprocess(v => v || undefined, z.string().optional()),
 });
 
 export const env = schema.parse(process.env);

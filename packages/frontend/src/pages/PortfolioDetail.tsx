@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft, Settings, TrendingUp, Activity, Clock, DollarSign,
-  LogOut, LogIn, CheckCircle, Loader, AlertCircle, ExternalLink, Pause, Play, RefreshCw, type LucideIcon,
+  LogOut, LogIn, CheckCircle, Loader, AlertCircle, ExternalLink, Pause, Play, RefreshCw, Zap, type LucideIcon,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from '@mysten/dapp-kit'
@@ -27,6 +27,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { formatDusdc, formatNav, formatPct, formatApy, formatDateTime } from '@/lib/format'
 import { STRATEGY_NAMES } from '@/lib/constants'
 import { txUrl } from '@/lib/sui'
+import { api, type RunCycleEvent } from '@/lib/api'
 
 // ── ConfigModal ────────────────────────────────────────────────────────────────
 
@@ -803,17 +804,53 @@ function RenewPolicyCapModal({
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 
+interface RunCycleState {
+  running: boolean
+  progress: string
+  txLinks: Array<{ protocol: string; label: string; digest: string; url: string }>
+  error: string | null
+  done: boolean
+}
+
 export default function PortfolioDetail() {
   const { id } = useParams<{ id: string }>()
-  const { data: portfolio, isLoading, error } = usePortfolioDetail(id!)
+  const { data: portfolio, isLoading, error, refetch } = usePortfolioDetail(id!)
   const { mutate: patchPortfolio, isPending: isPausing } = usePatchPortfolio(id!)
   const [showConfig, setShowConfig] = useState(false)
   const [showDeposit, setShowDeposit] = useState(false)
   const [showWithdraw, setShowWithdraw] = useState(false)
   const [showRenew, setShowRenew] = useState(false)
   const [policyCapExpiryMs, setPolicyCapExpiryMs] = useState<number | null>(null)
+  const [runCycle, setRunCycle] = useState<RunCycleState>({
+    running: false, progress: '', txLinks: [], error: null, done: false,
+  })
+  const runCycleAbortRef = useRef<AbortController | null>(null)
 
   const suiClient = useSuiClient()
+
+  const handleRunCycle = useCallback(async () => {
+    if (!id) return
+    setRunCycle({ running: true, progress: 'Initiating cycle…', txLinks: [], error: null, done: false })
+    const ac = new AbortController()
+    runCycleAbortRef.current = ac
+    try {
+      for await (const event of api.portfolios.streamRunCycle(id)) {
+        if (ac.signal.aborted) break
+        if (event.type === 'progress') {
+          setRunCycle(s => ({ ...s, progress: event.message }))
+        } else if (event.type === 'tx') {
+          setRunCycle(s => ({ ...s, txLinks: [...s.txLinks, { protocol: event.protocol, label: event.label, digest: event.digest, url: event.url }] }))
+        } else if (event.type === 'done') {
+          setRunCycle(s => ({ ...s, running: false, done: true, progress: 'Cycle complete' }))
+          void refetch()
+        } else if (event.type === 'error') {
+          setRunCycle(s => ({ ...s, running: false, error: event.message }))
+        }
+      }
+    } catch (err) {
+      setRunCycle(s => ({ ...s, running: false, error: err instanceof Error ? err.message : String(err) }))
+    }
+  }, [id, refetch])
 
   // Read PolicyCap expiry_ms from the on-chain object
   useEffect(() => {
@@ -925,8 +962,71 @@ export default function PortfolioDetail() {
           <Button variant="outline" size="sm" onClick={() => setShowConfig(true)}>
             <Settings className="w-3.5 h-3.5" /> Settings
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRunCycle}
+            disabled={runCycle.running}
+            style={{ borderColor: 'rgba(169,168,236,0.4)', color: '#A9A8EC' }}
+          >
+            {runCycle.running
+              ? <><Loader className="w-3.5 h-3.5 animate-spin" /> Running…</>
+              : <><Zap className="w-3.5 h-3.5" /> Run Cycle Now</>
+            }
+          </Button>
         </div>
       </div>
+
+      {/* Run-cycle result panel */}
+      {(runCycle.running || runCycle.done || runCycle.error) && (
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-xl px-5 py-4 space-y-3"
+          style={{
+            background: runCycle.error ? 'rgba(240,68,56,0.06)' : runCycle.done ? 'rgba(61,214,140,0.06)' : 'rgba(169,168,236,0.06)',
+            border: `1px solid ${runCycle.error ? 'rgba(240,68,56,0.2)' : runCycle.done ? 'rgba(61,214,140,0.2)' : 'rgba(169,168,236,0.2)'}`,
+          }}
+        >
+          <div className="flex items-center gap-2">
+            {runCycle.running && <Loader className="w-4 h-4 animate-spin" style={{ color: '#A9A8EC' }} />}
+            {runCycle.done && <CheckCircle className="w-4 h-4" style={{ color: 'var(--status-green)' }} />}
+            {runCycle.error && <AlertCircle className="w-4 h-4" style={{ color: 'var(--status-red)' }} />}
+            <span className="text-sm font-medium" style={{ color: runCycle.error ? 'var(--status-red)' : 'var(--ink-primary)' }}>
+              {runCycle.error ? runCycle.error : runCycle.progress}
+            </span>
+            {(runCycle.done || runCycle.error) && (
+              <button
+                className="ml-auto text-xs"
+                style={{ color: 'var(--ink-muted)' }}
+                onClick={() => setRunCycle({ running: false, progress: '', txLinks: [], error: null, done: false })}
+              >
+                dismiss
+              </button>
+            )}
+          </div>
+          {runCycle.txLinks.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {runCycle.txLinks.map((tx) => (
+                <a
+                  key={tx.digest}
+                  href={tx.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-1 rounded border transition-colors hover:opacity-80"
+                  style={{
+                    color: tx.protocol === 'DeepBook Spot' ? '#6ee7b7' : '#A9A8EC',
+                    borderColor: tx.protocol === 'DeepBook Spot' ? '#6ee7b744' : '#A9A8EC44',
+                    background: tx.protocol === 'DeepBook Spot' ? '#6ee7b70f' : '#A9A8EC0f',
+                  }}
+                >
+                  {tx.label} <ExternalLink className="w-2.5 h-2.5" />
+                </a>
+              ))}
+            </div>
+          )}
+        </motion.div>
+      )}
 
       {/* Risk disclosure — non-dismissible for bettor strategies */}
       <RiskDisclosure strategyType={portfolio.strategyType} />
@@ -1082,7 +1182,7 @@ export default function PortfolioDetail() {
                 No cycles executed yet. The keeper runs every sub-hour expiry.
               </div>
             ) : (
-              <CycleTable cycles={portfolio.cycles ?? portfolio.recentCycles} />
+              <CycleTable cycles={portfolio.cycles ?? portfolio.recentCycles} strategyType={portfolio.strategyType} />
             )}
           </div>
         </TabsContent>

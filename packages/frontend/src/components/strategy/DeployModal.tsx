@@ -34,7 +34,7 @@ interface DeployConfig {
   hedgeMultiplier: string
 }
 
-type Step = 'config' | 'confirm' | 'deploying' | 'depositing' | 'registering' | 'done' | 'error'
+type Step = 'config' | 'confirm' | 'deploying' | 'depositing' | 'enabling' | 'registering' | 'done' | 'error'
 
 const DUSDC_DECIMALS = 6
 
@@ -57,6 +57,7 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
   const [statusMsg, setStatusMsg] = useState('')
   const [tx1Digest, setTx1Digest] = useState('')
   const [tx2Digest, setTx2Digest] = useState('')
+  const [setupTxDigest, setSetupTxDigest] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
 
   const account = useCurrentAccount()
@@ -69,12 +70,15 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
   const name     = STRATEGY_NAMES[strategyType ?? 0] ?? `Strategy ${strategyType ?? 0}`
   const isBettor = BETTOR_STRATEGIES.has(strategyType ?? 0)
 
+  const needsKeeperSetup = strategyType === 3 || strategyType === 7
+
   const handleClose = () => {
-    if (step === 'deploying' || step === 'depositing' || step === 'registering') return
+    if (step === 'deploying' || step === 'depositing' || step === 'enabling' || step === 'registering') return
     setStep('config')
     setStatusMsg('')
     setTx1Digest('')
     setTx2Digest('')
+    setSetupTxDigest('')
     setErrorMsg('')
     onClose()
   }
@@ -205,6 +209,22 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
       // Invalidate portfolio list so Dashboard/Portfolios page refreshes
       void qc.invalidateQueries({ queryKey: ['portfolios'] })
 
+      // ── TX3 (keeper-signed): enable strategy for PP + Margin Loop ─────────
+      // Runs AFTER DB registration so updateMany finds the row.
+      if (needsKeeperSetup) {
+        setStep('enabling')
+        setStatusMsg('Enabling strategy on-chain (keeper-signed)…')
+        const setupRes = await api.portfolios.keeperSetup({
+          portfolio_id:  portfolioId,
+          policy_cap_id: policyCapId,
+          strategy_type: strategyType,
+          deposit_raw:   depositRaw.toString(),
+        })
+        if (setupRes.error) throw new Error(`Keeper setup failed: ${setupRes.error}`)
+        if (!setupRes.manager_id) throw new Error('Keeper setup succeeded but no managerId returned — check API logs')
+        if (setupRes.setup_tx_digest) setSetupTxDigest(setupRes.setup_tx_digest)
+      }
+
       setStep('done')
       setStatusMsg('Portfolio live — keeper will act on the next expiry.')
     } catch (err) {
@@ -213,7 +233,7 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
     }
   }, [account, chainConfig, config, isBettor, signAndExecute, suiClient, strategyType, qc])
 
-  const isProcessing = step === 'deploying' || step === 'depositing' || step === 'registering'
+  const isProcessing = step === 'deploying' || step === 'depositing' || step === 'enabling' || step === 'registering'
 
   // Early return AFTER all hooks — never return before hooks or their count changes per render
   if (strategyType === null) return null
@@ -379,7 +399,10 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
               className="space-y-3"
             >
               <p className="text-sm" style={{ color: 'var(--ink-secondary)' }}>
-                Two wallet signatures required: one to create the portfolio, one to deposit DUSDC.
+                {needsKeeperSetup
+                  ? 'Two wallet signatures required. The keeper enables the strategy automatically.'
+                  : 'Two wallet signatures required: one to create the portfolio, one to deposit DUSDC.'
+                }
               </p>
               <div
                 className="rounded-lg divide-y"
@@ -415,11 +438,12 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
               animate={{ opacity: 1 }}
               className="py-6 space-y-5"
             >
-              {[
+              {([
                 { label: 'Create portfolio + transfer PolicyCap', done: step !== 'deploying', active: step === 'deploying' },
-                { label: 'Deposit DUSDC', done: step === 'registering', active: step === 'depositing' },
+                { label: 'Deposit DUSDC', done: step === 'enabling' || step === 'registering', active: step === 'depositing' },
+                ...(needsKeeperSetup ? [{ label: 'Enable strategy on-chain (keeper)', done: step === 'registering', active: step === 'enabling' }] : []),
                 { label: 'Register with keeper', done: false, active: step === 'registering' },
-              ].map(({ label, done, active }) => (
+              ] as Array<{ label: string; done: boolean; active: boolean }>).map(({ label, done, active }) => (
                 <div key={label} className="flex items-center gap-3">
                   {done
                     ? <CheckCircle className="w-4 h-4 shrink-0" style={{ color: 'var(--status-green)' }} />
@@ -474,6 +498,17 @@ export function DeployModal({ strategyType, open, onClose }: DeployModalProps) {
                     style={{ color: 'var(--accent)' }}
                   >
                     Deposit TX <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+                {setupTxDigest && (
+                  <a
+                    href={txUrl(setupTxDigest)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs hover:underline"
+                    style={{ color: 'var(--accent)' }}
+                  >
+                    Strategy Enable TX <ExternalLink className="w-3 h-3" />
                   </a>
                 )}
               </div>

@@ -2,7 +2,7 @@ import { ArrowRight, Shield, TrendingUp, AlertTriangle } from 'lucide-react'
 import { motion } from 'framer-motion'
 import {
   STRATEGY_NAMES, STRATEGY_DESCRIPTIONS, STRATEGY_RISK_LABELS,
-  BETTOR_STRATEGIES, HOUSE_STRATEGIES, STRATEGY_COLORS,
+  BETTOR_STRATEGIES, HOUSE_STRATEGIES, STRATEGY_COLORS, STRATEGY_PROTOCOLS,
 } from '@/lib/constants'
 import { BracketCard } from '@/components/common/BracketCard'
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,7 @@ export function StrategyCard({ strategyType, onDeploy, index = 0 }: StrategyCard
   const desc = STRATEGY_DESCRIPTIONS[strategyType] ?? ''
   const risk = STRATEGY_RISK_LABELS[strategyType] ?? ''
   const color = STRATEGY_COLORS[strategyType] ?? '#A9A8EC'
+  const protocols = STRATEGY_PROTOCOLS[strategyType] ?? []
   const isBettor = BETTOR_STRATEGIES.has(strategyType)
   const isHouse = HOUSE_STRATEGIES.has(strategyType)
 
@@ -51,6 +52,22 @@ export function StrategyCard({ strategyType, onDeploy, index = 0 }: StrategyCard
           <p className="text-sm text-[#9191A4] leading-relaxed">{desc}</p>
         </div>
 
+        {/* Protocol tags — composability proof */}
+        {protocols.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {protocols.map((p) => (
+              <span
+                key={p.name}
+                className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full border"
+                style={{ color: p.color, borderColor: `${p.color}44`, background: `${p.color}0f` }}
+              >
+                <span className="w-1 h-1 rounded-full inline-block" style={{ background: p.color }} />
+                {p.name}
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Risk label */}
         <div className="flex items-center gap-1.5 text-xs">
           {isBettor ? (
@@ -73,14 +90,13 @@ export function StrategyCard({ strategyType, onDeploy, index = 0 }: StrategyCard
 
         <div className="mt-auto">
           <Button
-            variant={strategyType === 7 ? 'ghost' : 'outline'}
+            variant="outline"
             size="sm"
             onClick={() => onDeploy(strategyType)}
-            disabled={strategyType === 7}
             className="w-full"
           >
-            {strategyType === 7 ? 'Admin Only' : 'Deploy Strategy'}
-            {strategyType !== 7 && <ArrowRight className="w-3.5 h-3.5" />}
+            Deploy Strategy
+            <ArrowRight className="w-3.5 h-3.5" />
           </Button>
         </div>
       </BracketCard>

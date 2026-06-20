@@ -52,6 +52,17 @@ export const KEEPER_STATUS_LABELS: Record<string, string> = {
   error: 'Error',
 }
 
+export const STRATEGY_PROTOCOLS: Record<number, { name: string; color: string }[]> = {
+  0: [{ name: 'DeepBook Predict', color: '#A9A8EC' }],
+  1: [{ name: 'DeepBook Predict', color: '#A9A8EC' }, { name: 'DeepBook Spot', color: '#6ee7b7' }],
+  2: [{ name: 'DeepBook Predict', color: '#A9A8EC' }, { name: 'DeepBook Spot', color: '#6ee7b7' }],
+  3: [{ name: 'Iron Bank', color: '#6ee7b7' }, { name: 'DeepBook Predict', color: '#A9A8EC' }],
+  4: [{ name: 'DeepBook Predict', color: '#A9A8EC' }],
+  5: [{ name: 'DeepBook Predict', color: '#A9A8EC' }],
+  6: [{ name: 'DeepBook Predict', color: '#A9A8EC' }, { name: 'Hyperliquid', color: '#94a3b8' }],
+  7: [{ name: 'deepbook_margin', color: '#fb923c' }, { name: 'DeepBook Predict', color: '#A9A8EC' }],
+}
+
 export const BETTOR_DISCLOSURE =
   'Short-volatility strategy — profitable in calm markets, loses in volatility spikes.'
 
