@@ -689,43 +689,75 @@ export default function Landing() {
       </section>
 
       {/* ── 6. Powered by ───────────────────────────────────────────────────── */}
-      <section className="px-6 md:px-16 py-24 md:py-32 max-w-7xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="text-center mb-14"
-        >
-          <div className="text-xs tracking-[0.18em] text-text-dim mb-4">BUILT ON</div>
-          <h2 className="text-3xl md:text-4xl font-display tracking-tight text-foreground">
-            The best infrastructure on Sui
-          </h2>
-        </motion.div>
+      <section className="relative overflow-hidden" style={{ background: '#ffffff' }}>
+        {/* Purple glow — bottom left */}
+        <div
+          className="pointer-events-none absolute bottom-0 left-0 w-[700px] h-[500px]"
+          style={{
+            background: 'radial-gradient(ellipse at bottom left, rgba(169,168,236,0.55) 0%, rgba(169,168,236,0.40) 50%, transparent 70%)',
+          }}
+          aria-hidden
+        />
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {POWERED_BY.map(({ name, Icon, color, desc }, i) => (
-            <motion.div
-              key={name}
-              initial={{ opacity: 0, y: 10 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.08, duration: 0.4 }}
-              className="rounded-xl border border-border bg-card/50 p-6"
+        <div className="relative max-w-7xl mx-auto px-6 md:px-16 py-24 md:py-32">
+          {/* Header */}
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className="mb-16"
+          >
+            <div
+              className="text-xs tracking-[0.18em] font-semibold mb-4"
+              style={{ color: '#A9A8EC' }}
             >
-              <div
-                className="w-10 h-10 rounded-lg flex items-center justify-center mb-5"
+              BUILT ON
+            </div>
+            <h2
+              className="text-4xl md:text-5xl font-display tracking-tight leading-tight"
+              style={{ color: '#121213' }}
+            >
+              The best infrastructure<br />on Sui
+            </h2>
+          </motion.div>
+
+          {/* 2×2 grid with divider lines */}
+          <div className="grid grid-cols-1 sm:grid-cols-2">
+            {POWERED_BY.map(({ name, Icon, color, desc }, i) => (
+              <motion.div
+                key={name}
+                initial={{ opacity: 0, y: 10 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.09, duration: 0.45 }}
+                className="p-8 md:p-12"
                 style={{
-                  background: `${color}12`,
-                  border: `1px solid ${color}28`,
+                  borderTop: '1px solid rgba(0,0,0,0.08)',
+                  borderRight: i % 2 === 0 ? '1px solid rgba(0,0,0,0.08)' : 'none',
                 }}
               >
-                <Icon className="w-5 h-5" style={{ color }} />
-              </div>
-              <div className="font-semibold text-foreground mb-2">{name}</div>
-              <p className="text-xs text-muted-foreground leading-relaxed">{desc}</p>
-            </motion.div>
-          ))}
+                <div
+                  className="w-10 h-10 rounded-lg flex items-center justify-center mb-6"
+                  style={{
+                    background: `${color}18`,
+                    border: `1px solid ${color}30`,
+                  }}
+                >
+                  <Icon className="w-5 h-5" style={{ color }} />
+                </div>
+                <div
+                  className="text-2xl font-display font-semibold mb-3 tracking-tight"
+                  style={{ color: '#121213' }}
+                >
+                  {name}
+                </div>
+                <p className="text-sm leading-relaxed" style={{ color: '#58586A' }}>
+                  {desc}
+                </p>
+              </motion.div>
+            ))}
+          </div>
         </div>
       </section>
 
