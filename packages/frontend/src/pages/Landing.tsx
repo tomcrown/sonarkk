@@ -8,6 +8,7 @@ import { motion } from 'framer-motion'
 import { LandingHeader } from '@/components/layout/Header'
 import { BracketCard } from '@/components/common/BracketCard'
 import FloatingLines from '@/components/ui/FloatingLines'
+import SplitText from '@/components/ui/SplitText'
 
 // ─── Keeper terminal data ─────────────────────────────────────────────────────
 
@@ -254,40 +255,78 @@ export default function Landing() {
         />
         <div className="absolute inset-0 bg-background/50 pointer-events-none" />
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: 'easeOut' }}
-          className="relative z-10 max-w-5xl text-center mt-20"
-        >
-          {/* <div className="inline-flex items-center gap-2 mb-8 px-4 py-1.5 rounded-full border border-border bg-card/50 backdrop-blur text-xs text-muted-foreground">
+        <div className="relative z-10 max-w-5xl text-center mt-20">
+          {/* Pill */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+            className="inline-flex items-center gap-2 mb-8 px-4 py-1.5 rounded-full border border-border bg-card/50 backdrop-blur text-xs text-muted-foreground"
+          >
             <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
             Live on Sui testnet · keeper runs every expiry
-          </div> */}
+          </motion.div>
 
-          <h1 className="text-5xl md:text-7xl font-display font-medium tracking-tight text-gradient-accent leading-[1.05]">
-            The Strategy Platform<br />for DeepBook Predict
+          {/* Headline */}
+          <h1 className="text-5xl md:text-7xl font-display font-medium tracking-tight leading-[1.05]">
+            <SplitText
+              text="The Strategy Platform"
+              tag="span"
+              delay={28}
+              duration={1.1}
+              staggerStart={0.3}
+              className="block"
+              gradient
+            />
+            <SplitText
+              text="for DeepBook Predict"
+              tag="span"
+              delay={28}
+              duration={1.1}
+              staggerStart={0.96}
+              className="block"
+              gradient
+            />
           </h1>
 
-          <p className="mt-8 text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+          {/* Subtitle */}
+          <motion.p
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 1.8, ease: 'easeOut' }}
+            className="mt-8 text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed"
+          >
             Configure, backtest, deploy, and copy automated strategies. Full visibility into what you're running and why — every cycle is on-chain.
-          </p>
+          </motion.p>
 
+          {/* Buttons */}
           <div className="mt-10 flex items-center justify-center gap-3 flex-wrap">
-            <Link
-              to="/explore"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-accent-light to-accent text-background font-medium hover:opacity-90 transition-opacity"
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 2.1, ease: 'easeOut' }}
             >
-              Deploy a strategy <ArrowRight className="w-4 h-4" />
-            </Link>
-            <Link
-              to="/leaderboard"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-full border border-border text-foreground hover:bg-card transition-colors"
+              <Link
+                to="/explore"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-accent-light to-accent text-background font-medium hover:opacity-90 transition-opacity"
+              >
+                Deploy a strategy <ArrowRight className="w-4 h-4" />
+              </Link>
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 2.25, ease: 'easeOut' }}
             >
-              Browse leaderboard
-            </Link>
+              <Link
+                to="/leaderboard"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-full border border-border text-foreground hover:bg-card transition-colors"
+              >
+                Browse leaderboard
+              </Link>
+            </motion.div>
           </div>
-        </motion.div>
+        </div>
       </section>
 
       {/* ── 2. Keeper ───────────────────────────────────────────────────────── */}
