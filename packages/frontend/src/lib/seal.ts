@@ -20,7 +20,7 @@ import { Transaction } from '@mysten/sui/transactions'
 
 const SEAL_THRESHOLD = 1   // 1-of-N: any single key server can grant decryption
 const SESSION_TTL_MIN = 10 // ephemeral session key lifetime in minutes
-const WALRUS_EPOCHS = 200  // blob storage duration on Walrus testnet
+const WALRUS_EPOCHS = 52    // blob storage duration; testnet caps at 53 epochs max
 
 // ── SealClient factory ────────────────────────────────────────────────────────
 // The suiClient from useSuiClient() (dapp-kit) works as SealCompatibleClient at runtime.
@@ -125,6 +125,26 @@ export async function encryptAndUpload(
 }
 
 // ── Build Seal approval PTB ───────────────────────────────────────────────────
+//
+// Transaction.build() in @mysten/sui v2.x resolves unresolved object inputs by calling
+// client.core.getObjects() — which only exists on SuiGrpcClient, not on the dapp-kit
+// JSON-RPC client returned by useSuiClient().  To avoid the TypeError we pre-fetch the
+// object refs (version + digest) via the public JSON-RPC API, then supply fully-resolved
+// objectRef inputs so build() can serialise offline without touching the client.
+
+interface ObjectRef { objectId: string; version: string; digest: string }
+
+async function fetchObjectRef(
+  suiClient: { getObject: (args: { id: string; options: { showVersion: boolean; showDigest: boolean } }) => Promise<{ data?: { objectId?: string; version?: string; digest?: string } }> },
+  objectId: string,
+): Promise<ObjectRef> {
+  const resp = await suiClient.getObject({ id: objectId, options: { showVersion: true, showDigest: true } })
+  const d = resp.data
+  if (!d?.objectId || !d?.version || !d?.digest) {
+    throw new Error(`Could not resolve object ref for ${objectId}`)
+  }
+  return { objectId: d.objectId, version: d.version, digest: d.digest }
+}
 
 async function buildSealApprovePtb(
   suiClient: object,
@@ -139,22 +159,46 @@ async function buildSealApprovePtb(
     : portfolioObjectId
   const idBytes = hexToBytes(idHex)
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const client = suiClient as any
+
+  // Pre-fetch object refs so Transaction.build() resolves inputs offline.
+  const [portfolioRef, ticketRef] = await Promise.all([
+    fetchObjectRef(client, portfolioObjectId),
+    fetchObjectRef(client, ticketObjectId),
+  ])
+
   const tx = new Transaction()
   tx.setSender(buyerAddress)
+
+  // Set explicit gas so coreClientResolveTransactionPlugin skips all network calls:
+  //   needsGasPrice=false, needsPayment=false, needsSimulateExpiration=false
+  // Non-empty payment also prevents setExpiration() from running.
+  // The Seal key server uses devInspect which does not validate actual gas coins.
+  tx.setGasPrice(1000n)
+  tx.setGasBudget(10_000_000n)
+  tx.setGasPayment([{
+    objectId: '0x0000000000000000000000000000000000000000000000000000000000000000',
+    version: '1',
+    digest: portfolioRef.digest, // borrow a real digest format; coin itself is irrelevant for devInspect
+  }])
+
   tx.moveCall({
     target: `${packageId}::portfolio::seal_approve_copy_purchase`,
     typeArguments: [dusdcType],
     arguments: [
       tx.pure.vector('u8', idBytes),
-      tx.object(portfolioObjectId),
-      tx.object(ticketObjectId),
+      tx.objectRef(portfolioRef),
+      tx.objectRef(ticketRef),
     ],
   })
 
-  // tx.build() accepts a `client` option at runtime but the type may not declare it
-  // in @mysten/sui v2.17; casting through unknown is safe — the runtime works correctly.
+  // Pass an empty object as client so getClient() doesn't throw.
+  // client.core is undefined → resolveTransactionPlugin short-circuits via ?.
+  // All resolver conditions are false (gas explicit, objects pre-resolved, no UnresolvedPure)
+  // so no method on client.core is ever called.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return await (tx as any).build({ client: suiClient })
+  return await tx.build({ client: {} as any })
 }
 
 // ── Decrypt ───────────────────────────────────────────────────────────────────

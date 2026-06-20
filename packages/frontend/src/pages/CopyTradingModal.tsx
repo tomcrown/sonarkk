@@ -77,6 +77,8 @@ export function CopyTradingModal({ entry, open, onClose }: CopyTradingModalProps
 
   // Extract portfolioId + policyCapId from TX effects
   const extractObjects = useCallback(async (digest: string) => {
+    // Wait for the node to index the transaction before querying its effects.
+    await suiClient.waitForTransaction({ digest })
     const tx = await suiClient.getTransactionBlock({
       digest,
       options: { showObjectChanges: true },
@@ -136,12 +138,13 @@ export function CopyTradingModal({ entry, open, onClose }: CopyTradingModalProps
 
       const feeTxb = new Transaction()
       const [split] = feeTxb.splitCoins(feeTxb.object(feeCoin.coinObjectId), [feeTxb.pure.u64(feeRaw)])
-      const ticket = feeTxb.moveCall({
+      feeTxb.moveCall({
         target: `${PKG}::portfolio::purchase_copy_access`,
         typeArguments: [DUSDC],
         arguments: [feeTxb.object(portfolioObjId), split],
       })
-      feeTxb.transferObjects([ticket], userAddress)
+      // CopyAccessTicket has no `store` — the Move function transfers it to sender directly;
+      // no PTB transferObjects needed here.
 
       const feeResult = await signAndExecute({ transaction: feeTxb })
       const feeTxDetails = await suiClient.getTransactionBlock({
@@ -421,7 +424,7 @@ export function CopyTradingModal({ entry, open, onClose }: CopyTradingModalProps
               <div className="space-y-1.5">
                 <Label>Your deposit (DUSDC)</Label>
                 <Input
-                  type="number" min="1"
+                  type="number" min="0.000001"
                   value={depositAmount}
                   onChange={(e) => setDepositAmount(e.target.value)}
                   placeholder="200"
@@ -532,7 +535,7 @@ export function CopyTradingModal({ entry, open, onClose }: CopyTradingModalProps
                 ? (
                   <Button
                     onClick={handlePurchaseFee}
-                    disabled={!account || parseFloat(depositAmount) < 10}
+                    disabled={!account || parseFloat(depositAmount) <= 0}
                   >
                     {!account
                       ? 'Connect wallet'
@@ -544,7 +547,7 @@ export function CopyTradingModal({ entry, open, onClose }: CopyTradingModalProps
                 ) : (
                   <Button
                     onClick={handleCopy}
-                    disabled={!account || parseFloat(depositAmount) < 10}
+                    disabled={!account || parseFloat(depositAmount) <= 0}
                   >
                     {!account ? 'Connect wallet' : 'Copy Strategy'}
                   </Button>

@@ -22,3 +22,6 @@ export { simulatePrincipalProtected } from './strategies/principal-protected.js'
 export { simulateRangeRoll }       from './strategies/range-roll.js';
 export { simulateVolTargetedRange } from './strategies/vol-targeted-range.js';
 export { simulateVolArb }          from './strategies/vol-arb.js';
+
+export { runRegimeAnalysis, breakEvenVol, VOL_SCENARIOS, UTIL_LEVELS } from './analysis/regime.js';
+export type { RegimeRow } from './analysis/regime.js';

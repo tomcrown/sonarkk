@@ -56,6 +56,29 @@ interface BacktestRegimeData {
   win_rate_pct: number | null
 }
 
+interface RawRoundPoint {
+  ms: number
+  nav: number
+  pnl_fraction: number
+}
+
+interface RawSensitivityPoint {
+  util_pct: number
+  net_apy_pct: number
+  max_drawdown_pct: number
+  sharpe: number
+  win_rate_pct: number | null
+}
+
+interface RawVolStressRow {
+  strategy: string
+  sigma_pct: number
+  vol_label: string
+  net_apy_pct: number
+  win_rate_pct: number
+  mode?: string
+}
+
 interface RawBacktestStrategy {
   strategy_id: string
   strategy_name: string
@@ -65,6 +88,9 @@ interface RawBacktestStrategy {
   sharpe: number | null
   win_rate_pct: number | null
   spread_cost_pct: number | null
+  round_results: RawRoundPoint[]
+  sensitivity: RawSensitivityPoint[]
+  break_even_vol_pct: number | null
   regime: {
     calm_lt_25: BacktestRegimeData | null
     normal_25_50: BacktestRegimeData | null
@@ -81,6 +107,7 @@ interface RawBacktestResponse {
   period_end: string
   realized_btc_vol_pct: number | null
   config_used: Record<string, unknown>
+  vol_stress_test: RawVolStressRow[]
   global_caveat: string
 }
 
@@ -135,27 +162,6 @@ function translateLeaderboardResponse(raw: RawLeaderboardResponse): LeaderboardR
   }
 }
 
-// Build a synthetic equity curve from aggregate APY (backend doesn't return per-round data)
-function buildEquityCurve(
-  periodStart: string,
-  periodEnd: string,
-  netApyPct: number,
-  oracleCount: number,
-): Array<{ date: string; value: number }> {
-  const start = new Date(periodStart).getTime()
-  const end = new Date(periodEnd).getTime()
-  const n = Math.min(Math.max(oracleCount, 2), 50)
-  const perStep = Math.pow(1 + netApyPct / 100, 1 / n)
-  const result: Array<{ date: string; value: number }> = []
-  let nav = 100.0
-  for (let i = 0; i <= n; i++) {
-    const ts = start + (end - start) * (i / n)
-    result.push({ date: new Date(ts).toISOString().split('T')[0]!, value: parseFloat(nav.toFixed(2)) })
-    if (i < n) nav *= perStep
-  }
-  return result
-}
-
 // Translate raw backtest response to the typed BacktestResult shape
 function translateBacktestResponse(raw: RawBacktestResponse, strategyType: number): BacktestResult {
   const stratId = STRATEGY_NUM_TO_ID[strategyType] ?? 'plp_supplier'
@@ -167,10 +173,23 @@ function translateBacktestResponse(raw: RawBacktestResponse, strategyType: numbe
     (365.25 * 24 * 3600 * 1000)
   const totalReturnPct = (Math.pow(1 + s.net_apy_pct / 100, durationYears) - 1) * 100
 
-  const equityCurve = buildEquityCurve(raw.period_start, raw.period_end, s.net_apy_pct, raw.oracle_count)
+  // Real per-round NAV series from backend
+  const roundResults: RoundPoint[] = s.round_results.map((r) => ({
+    date: new Date(r.ms).toISOString().split('T')[0]!,
+    nav: r.nav,
+    pnlFraction: r.pnl_fraction,
+  }))
+
+  // equityCurve / pnlCurve in legacy shape for ResultChart (still used)
+  const equityCurve = roundResults.length > 0
+    ? [{ date: new Date(raw.period_start).toISOString().split('T')[0]!, value: 100 },
+       ...roundResults.map((r) => ({ date: r.date, value: r.nav }))]
+    : [{ date: new Date(raw.period_start).toISOString().split('T')[0]!, value: 100 },
+       { date: new Date(raw.period_end).toISOString().split('T')[0]!, value: 100 * (1 + totalReturnPct / 100) }]
+
   const pnlCurve = equityCurve.map((p, i) => ({
     date: p.date,
-    value: i === 0 ? 0 : parseFloat((p.value - equityCurve[i - 1]!.value).toFixed(4)),
+    value: i === 0 ? 0 : parseFloat((p.value - (equityCurve[i - 1]?.value ?? 100)).toFixed(4)),
   }))
 
   const regimeBreakdown: Record<string, RegimeRow> = {}
@@ -182,31 +201,59 @@ function translateBacktestResponse(raw: RawBacktestResponse, strategyType: numbe
   for (const [key, r] of regimes) {
     if (r) {
       regimeBreakdown[key] = {
-        apyPct: r.net_apy_pct,
-        cycleCount: r.oracle_count,
-        winRate: r.win_rate_pct != null ? r.win_rate_pct / 100 : undefined,
+        apyPct:        r.net_apy_pct,
+        cycleCount:    r.oracle_count,
+        winRate:       r.win_rate_pct != null ? r.win_rate_pct / 100 : undefined,
+        sharpe:        r.sharpe ?? undefined,
+        maxDrawdownPct: r.max_drawdown_pct,
       }
     }
   }
 
+  const sensitivity: SensitivityPoint[] = (s.sensitivity ?? []).map((p) => ({
+    utilPct:       p.util_pct,
+    netApyPct:     p.net_apy_pct,
+    maxDrawdownPct: p.max_drawdown_pct,
+    sharpe:        p.sharpe,
+    winRatePct:    p.win_rate_pct,
+  }))
+
+  const volStressTest: VolStressRow[] = (raw.vol_stress_test ?? []).map((r) => ({
+    strategy:   r.strategy,
+    sigmaPct:   r.sigma_pct,
+    volLabel:   r.vol_label,
+    netApyPct:  r.net_apy_pct,
+    winRatePct: r.win_rate_pct,
+    mode:       r.mode,
+  }))
+
   return {
     metrics: {
       strategyType,
-      apyPct: s.net_apy_pct,
+      apyPct:        s.net_apy_pct,
       rollingApyPct: s.net_apy_pct,
-      sharpe: s.sharpe,
+      sharpe:        s.sharpe,
       maxDrawdownPct: s.max_drawdown_pct,
-      winRate: (s.win_rate_pct ?? 0) / 100,
+      winRate:       (s.win_rate_pct ?? 0) / 100,
       spreadCostPct: s.spread_cost_pct ?? 0,
       spreadEatenPct: s.spread_cost_pct ?? 0,
       totalReturnPct,
-      cycleCount: raw.oracle_count,
+      cycleCount:    raw.oracle_count,
     },
     equityCurve,
     pnlCurve,
+    roundResults,
     regimeBreakdown,
-    riskDisclosure: s.risk_disclosure,
-    caveat: s.apy_caveat ?? raw.global_caveat,
+    sensitivity,
+    volStressTest,
+    breakEvenVolPct: s.break_even_vol_pct,
+    periodStart:     raw.period_start,
+    periodEnd:       raw.period_end,
+    oracleCount:     raw.oracle_count,
+    realizedBtcVolPct: raw.realized_btc_vol_pct,
+    strategyClass:   s.class as 'house' | 'bettor',
+    riskDisclosure:  s.risk_disclosure,
+    caveat:          s.apy_caveat ?? raw.global_caveat,
   }
 }
 
@@ -339,13 +386,47 @@ export interface RegimeRow {
   returnPct?: number
   cycleCount: number
   winRate?: number
+  sharpe?: number
+  maxDrawdownPct?: number
+}
+
+export interface RoundPoint {
+  date: string    // ISO date string (YYYY-MM-DD)
+  nav: number     // NAV starting at 100
+  pnlFraction: number
+}
+
+export interface SensitivityPoint {
+  utilPct: number
+  netApyPct: number
+  maxDrawdownPct: number
+  sharpe: number
+  winRatePct: number | null
+}
+
+export interface VolStressRow {
+  strategy: string
+  sigmaPct: number
+  volLabel: string
+  netApyPct: number
+  winRatePct: number
+  mode?: string
 }
 
 export interface BacktestResult {
   metrics: BacktestMetrics
   equityCurve: Array<{ date: string; value: number }>
   pnlCurve: Array<{ date: string; value: number }>
+  roundResults: RoundPoint[]
   regimeBreakdown: Record<string, RegimeRow>
+  sensitivity: SensitivityPoint[]
+  volStressTest: VolStressRow[]
+  breakEvenVolPct: number | null
+  periodStart: string
+  periodEnd: string
+  oracleCount: number
+  realizedBtcVolPct: number | null
+  strategyClass: 'house' | 'bettor'
   riskDisclosure: string | null
   caveat: string
 }
@@ -629,12 +710,8 @@ export async function* streamChat(
   signal?: AbortSignal,
   walletAddress?: string,
 ): AsyncGenerator<string> {
-  // Build messages array for Gemini convention: history roles mapped assistant→model
   const messages = [
-    ...(history ?? []).map((m) => ({
-      role: m.role === 'assistant' ? 'model' : m.role,
-      content: m.content,
-    })),
+    ...(history ?? []).map((m) => ({ role: m.role, content: m.content })),
     { role: 'user', content: message },
   ]
 

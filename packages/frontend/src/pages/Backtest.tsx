@@ -1,24 +1,27 @@
 import { useState } from 'react'
-import { Play, CheckCircle, XCircle, Loader, FlaskConical, Clock } from 'lucide-react'
+import { Play, CheckCircle, XCircle, Loader, FlaskConical, Clock, TrendingUp, BarChart2, Sliders } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useBacktest, type RunRecord } from '@/hooks/useBacktest'
 import { ResultChart } from '@/components/backtest/ResultChart'
 import { RegimeTable } from '@/components/backtest/RegimeTable'
+import { VolStressChart } from '@/components/backtest/VolStressChart'
+import { PnlDistribution } from '@/components/backtest/PnlDistribution'
+import { SensitivityTable } from '@/components/backtest/SensitivityTable'
 import { BracketCard } from '@/components/common/BracketCard'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { formatPct, formatApy } from '@/lib/format'
+import { formatPct, formatApy, formatDate } from '@/lib/format'
 import { STRATEGY_NAMES } from '@/lib/constants'
 import { cn } from '@/lib/cn'
 
 const STRATEGY_OPTIONS = [0, 1, 2, 3, 4, 5, 6]
 
 const TIMEFRAME_OPTIONS = [
-  { value: '7d',  label: 'Last 7 days'       },
-  { value: '30d', label: 'Last 30 days'      },
-  { value: '90d', label: 'Last 90 days'      },
-  { value: 'all', label: 'All available data' },
+  { value: '7d',  label: 'Last 7 days'        },
+  { value: '30d', label: 'Last 30 days'       },
+  { value: '90d', label: 'Last 90 days'       },
+  { value: 'all', label: 'All available data'  },
 ]
 
 const SIM_STEPS = [
@@ -97,13 +100,23 @@ function RunHistoryItem({ result, isActive, onClick }: { result: RunRecord; isAc
   )
 }
 
-function MetricBox({ label, value, color }: { label: string; value: string; color?: string }) {
+function MetricBox({ label, value, color, sub }: { label: string; value: string; color?: string; sub?: string }) {
   return (
     <div className="bg-card border border-border rounded-lg p-5">
       <div className="text-[10px] tracking-[0.15em] text-text-dim mb-2">{label}</div>
       <div className={`text-3xl font-display ${color ? '' : 'text-foreground'}`} style={color ? { color } : {}}>
         {value}
       </div>
+      {sub && <div className="text-[10px] text-text-dim mt-1">{sub}</div>}
+    </div>
+  )
+}
+
+function SectionHeader({ icon: Icon, label }: { icon: React.FC<{ className?: string }>; label: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Icon className="w-3.5 h-3.5 text-accent" />
+      <div className="text-[10px] tracking-[0.15em] text-accent">{label}</div>
     </div>
   )
 }
@@ -239,13 +252,48 @@ export default function Backtest() {
                 exit={{ opacity: 0 }}
                 className="space-y-6"
               >
+                {/* Header */}
                 <div>
                   <div className="text-[10px] tracking-[0.15em] text-text-dim mb-1">
                     {STRATEGY_NAMES[displayResult.strategyType]} · {displayResult.timeframe}
+                    {displayResult.strategyClass && (
+                      <span className={cn(
+                        'ml-2 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase',
+                        displayResult.strategyClass === 'house'
+                          ? 'bg-[rgba(61,214,140,0.12)] text-[#3DD68C] border border-[rgba(61,214,140,0.2)]'
+                          : 'bg-[rgba(240,68,56,0.10)] text-[#F04438] border border-[rgba(240,68,56,0.2)]',
+                      )}>
+                        {displayResult.strategyClass === 'house' ? 'house · spread income' : 'bettor · short-vol'}
+                      </span>
+                    )}
                   </div>
                   <h2 className="text-2xl font-display">Simulation Results</h2>
+
+                  {/* Period + BTC vol info */}
+                  {displayResult.periodStart && (
+                    <div className="flex flex-wrap gap-4 mt-2 text-[11px] text-[#58586A]">
+                      <span>
+                        Period: <span className="text-[#9191A4]">{formatDate(displayResult.periodStart.split('T')[0]!)}</span>
+                        {' → '}
+                        <span className="text-[#9191A4]">{formatDate(displayResult.periodEnd.split('T')[0]!)}</span>
+                      </span>
+                      <span>Cycles: <span className="text-[#9191A4]">{displayResult.oracleCount}</span></span>
+                      {displayResult.realizedBtcVolPct != null && (
+                        <span>
+                          Realized BTC vol: <span className="text-[#9191A4]">{displayResult.realizedBtcVolPct.toFixed(1)}%</span>
+                          <span className={cn(
+                            'ml-1 text-[9px]',
+                            displayResult.realizedBtcVolPct < 30 ? 'text-[#3DD68C]' : displayResult.realizedBtcVolPct < 50 ? 'text-[#A9A8EC]' : 'text-[#F04438]',
+                          )}>
+                            ({displayResult.realizedBtcVolPct < 30 ? 'calm' : displayResult.realizedBtcVolPct < 50 ? 'normal' : 'high'})
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
+                {/* Core metrics */}
                 <div className="grid grid-cols-3 gap-4">
                   <MetricBox
                     label="TOTAL RETURN"
@@ -255,6 +303,7 @@ export default function Backtest() {
                   <MetricBox
                     label="ROLLING APY"
                     value={displayResult.metrics.apyPct != null ? formatApy(displayResult.metrics.apyPct) : '—'}
+                    sub="modeled flow · see caveat"
                   />
                   <MetricBox
                     label="MAX DRAWDOWN"
@@ -274,19 +323,40 @@ export default function Backtest() {
                     color="var(--warning)"
                   />
                   <MetricBox
-                    label="CYCLE COUNT"
-                    value={String(displayResult.metrics.cycleCount ?? '—')}
+                    label="SHARPE"
+                    value={displayResult.metrics.sharpe != null ? displayResult.metrics.sharpe.toFixed(2) : '—'}
+                    color={
+                      displayResult.metrics.sharpe == null ? undefined
+                      : displayResult.metrics.sharpe >= 1 ? '#3DD68C'
+                      : displayResult.metrics.sharpe >= 0.3 ? '#A9A8EC'
+                      : '#F04438'
+                    }
                   />
                 </div>
 
+                {/* Risk / caveat banners */}
+                {displayResult.riskDisclosure && (
+                  <div className="rounded-lg px-4 py-3 text-xs border border-[rgba(240,68,56,0.2)] bg-[rgba(240,68,56,0.05)] text-[#F04438]">
+                    <strong>Risk:</strong> {displayResult.riskDisclosure}
+                  </div>
+                )}
+
+                {displayResult.strategyClass === 'bettor' && displayResult.breakEvenVolPct != null && (
+                  <div className="rounded-lg px-4 py-3 text-xs border border-[rgba(232,166,39,0.25)] bg-[rgba(232,166,39,0.06)] text-[#E8A627]">
+                    <strong>Break-even vol:</strong> This strategy needs BTC realized vol ≤ <strong>{displayResult.breakEvenVolPct}%</strong> to be profitable.
+                    Above that threshold this is negative-EV. Currently shows as calm-regime only.
+                  </div>
+                )}
+
                 <div className="rounded-lg px-4 py-3 text-xs border border-accent-border bg-accent-muted text-muted-foreground">
-                  <strong className="text-accent-light">Note:</strong> Synthetic trader flow — /trades endpoint was empty on testnet. Returns reflect spread mechanics on assumed volume, not observed fill rates.
+                  <strong className="text-accent-light">Note:</strong> {displayResult.caveat}
                 </div>
 
+                {/* 1. Cumulative PnL Curve */}
                 <BracketCard className="p-6">
-                  <div className="text-[10px] tracking-[0.15em] text-accent mb-5">CUMULATIVE PNL CURVE</div>
+                  <div className="text-[10px] tracking-[0.15em] text-accent mb-5">CUMULATIVE NAV (BASE = 100)</div>
                   {displayResult.equityCurve && displayResult.equityCurve.length > 1 ? (
-                    <ResultChart data={displayResult.equityCurve} initialCapital={1000} />
+                    <ResultChart data={displayResult.equityCurve} initialCapital={100} />
                   ) : (
                     <div className="h-48 flex items-center justify-center text-sm text-text-dim">
                       Insufficient data points to render chart.
@@ -294,11 +364,52 @@ export default function Backtest() {
                   )}
                 </BracketCard>
 
+                {/* 2. Per-round P&L Distribution */}
+                {displayResult.roundResults && displayResult.roundResults.length > 0 && (
+                  <BracketCard className="p-6">
+                    <div className="mb-5">
+                      <SectionHeader icon={BarChart2} label="PER-ROUND P&L DISTRIBUTION" />
+                    </div>
+                    <PnlDistribution
+                      rounds={displayResult.roundResults}
+                      strategyClass={displayResult.strategyClass ?? 'house'}
+                    />
+                  </BracketCard>
+                )}
+
+                {/* 3. Regime Breakdown */}
                 {displayResult.regimeBreakdown && Object.keys(displayResult.regimeBreakdown).length > 0 && (
                   <div>
                     <div className="text-[10px] tracking-[0.15em] text-accent mb-3">REGIME BREAKDOWN</div>
                     <RegimeTable regimeBreakdown={displayResult.regimeBreakdown} />
                   </div>
+                )}
+
+                {/* 4. Vol Regime Stress Test */}
+                {displayResult.volStressTest && displayResult.volStressTest.length > 0 && (
+                  <BracketCard className="p-6">
+                    <div className="mb-5">
+                      <SectionHeader icon={TrendingUp} label="VOL REGIME STRESS TEST" />
+                    </div>
+                    <VolStressChart
+                      rows={displayResult.volStressTest}
+                      breakEvenVolPct={displayResult.breakEvenVolPct ?? null}
+                      strategyClass={displayResult.strategyClass ?? 'house'}
+                    />
+                  </BracketCard>
+                )}
+
+                {/* 5. Utilization Sensitivity */}
+                {displayResult.sensitivity && displayResult.sensitivity.length > 0 && (
+                  <BracketCard className="p-6">
+                    <div className="mb-5">
+                      <SectionHeader icon={Sliders} label="UTILIZATION SENSITIVITY" />
+                    </div>
+                    <SensitivityTable
+                      sensitivity={displayResult.sensitivity}
+                      strategyClass={displayResult.strategyClass ?? 'house'}
+                    />
+                  </BracketCard>
                 )}
               </motion.div>
             )}

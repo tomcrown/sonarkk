@@ -59,20 +59,20 @@ export default function Copilot() {
       {/* Messages area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-10 py-8">
         {isEmpty ? (
-          <div className="h-full flex flex-col items-center justify-center text-center max-w-xl mx-auto">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-accent-light to-accent flex items-center justify-center mb-6">
-              <Sparkles className="w-7 h-7 text-background" />
+          <div className="h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#A9A8EC] to-[#7B79D9] flex items-center justify-center mb-5 shadow-[0_0_24px_rgba(169,168,236,0.3)]">
+              <Sparkles className="w-6 h-6 text-white" />
             </div>
-            <h2 className="text-3xl font-display mb-3">
-              {isConnected ? 'Ask me anything about Sonark' : 'Pick up where you left off'}
+            <h2 className="text-2xl font-display mb-2 text-white">
+              {isConnected ? 'Ask me anything' : 'Your Sonark Copilot'}
             </h2>
-            <p className="text-muted-foreground mb-8 max-w-sm">
+            <p className="text-[13px] text-[#58586A] mb-7 max-w-sm leading-relaxed">
               {isConnected
-                ? 'I can help with strategy analysis, market conditions, and your portfolio.'
-                : 'Connect your wallet to chat with Copilot using your live portfolio data and come back to conversations anytime.'}
+                ? 'I have live access to your portfolio, market conditions, and the leaderboard.'
+                : 'Connect your wallet to get personalised advice using your live portfolio data.'}
             </p>
             {!isConnected && (
-              <Button onClick={() => setShowConnectModal(true)} className="btn-pill mb-8">
+              <Button onClick={() => setShowConnectModal(true)} variant="pill" size="sm" className="mb-7">
                 Connect wallet
               </Button>
             )}
@@ -81,7 +81,7 @@ export default function Copilot() {
                 <button
                   key={s}
                   onClick={() => sendMessage(s)}
-                  className="text-left p-4 bg-card border border-border rounded-lg text-sm hover:border-accent/40 transition-colors"
+                  className="text-left px-4 py-3 bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.07)] rounded-xl text-[13px] text-[#9191A4] hover:border-[rgba(169,168,236,0.3)] hover:text-white hover:bg-[rgba(169,168,236,0.05)] transition-all duration-150"
                 >
                   {s}
                 </button>
@@ -89,27 +89,27 @@ export default function Copilot() {
             </div>
           </div>
         ) : (
-          <div className="max-w-3xl mx-auto space-y-5">
+          <div className="max-w-2xl mx-auto space-y-6">
             <AnimatePresence initial={false}>
               {messages.map((msg, i) => (
                 <motion.div
                   key={i}
-                  initial={{ opacity: 0, y: 6 }}
+                  initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2 }}
+                  transition={{ duration: 0.18 }}
                 >
                   <ChatMessage message={msg} />
                 </motion.div>
               ))}
               {isStreaming && messages.at(-1)?.role === 'user' && (
-                <motion.div key="typing" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+                <motion.div key="typing" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
                   <TypingIndicator />
                 </motion.div>
               )}
             </AnimatePresence>
             {error && (
-              <div className="text-xs text-danger bg-danger/8 border border-danger/20 rounded-lg px-4 py-3">
-                Error: {error}. Make sure the API server is running.
+              <div className="text-[12px] text-[#F47C72] bg-[rgba(240,68,56,0.07)] border border-[rgba(240,68,56,0.18)] rounded-xl px-4 py-3">
+                {error} — make sure the API server is running.
               </div>
             )}
           </div>

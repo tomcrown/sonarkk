@@ -498,9 +498,10 @@ export default function Analytics() {
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <div className="text-[10px] tracking-[0.15em] text-accent mb-1">SVI VOL SURFACE</div>
-                    <h3 className="text-sm font-semibold text-foreground">Vol term structure — Active expiries</h3>
+                    <h3 className="text-sm font-semibold text-foreground">Vol term structure & smile — Active expiries</h3>
                     <p className="text-xs text-text-dim mt-1">
-                      ATM implied vol and house spread income for each active oracle, sorted by time to expiry. Higher ATM vol = wider spread = more income per cycle for house strategies.
+                      Term Structure tab: ATM implied vol and house spread income per oracle, sorted by expiry. Higher ATM vol = wider spread = more income for house strategies.
+                      Vol Smile tab: full SVI smile (implied vol vs log-moneyness) for each active expiry — skew and wing structure at a glance.
                     </p>
                   </div>
                   <p className="text-xs text-text-dim shrink-0 ml-4">

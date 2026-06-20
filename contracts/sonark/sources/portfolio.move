@@ -808,7 +808,7 @@ public fun purchase_copy_access<Q>(
     portfolio: &mut SonarkPortfolio<Q>,
     mut payment: Coin<Q>,
     ctx: &mut TxContext,
-): CopyAccessTicket {
+) {
     assert!(portfolio.copy_fee.is_some(), ECopyNotEnabled);
     assert!(portfolio.seal_blob_id.is_some(), ESealBlobNotSet);
 
@@ -832,11 +832,15 @@ public fun purchase_copy_access<Q>(
         fee_paid: fee,
     });
 
-    CopyAccessTicket {
+    // CopyAccessTicket has only `key` (no `store`) so it cannot be returned through
+    // a PTB and transferred with transferObjects (which requires `store`).
+    // Transfer directly to the buyer here using the privileged transfer.
+    let ticket = CopyAccessTicket {
         id: object::new(ctx),
         portfolio_id: object::id(portfolio),
         buyer: ctx.sender(),
-    }
+    };
+    transfer::transfer(ticket, ctx.sender());
 }
 
 /// Seal approval entry function.

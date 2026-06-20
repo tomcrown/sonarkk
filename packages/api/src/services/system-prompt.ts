@@ -1,17 +1,16 @@
 import type { LiveContext } from './context-assembler.js';
 
 /**
- * Build the full system prompt for the Sonark AI copilot.
+ * The large static part: persona, strategy encyclopedia, config guide,
+ * risk disclosures, and response guidelines. Never changes between turns.
  *
- * Injected once per conversation. Contains:
- *   1. Role + platform context
- *   2. Strategy encyclopedia (all 7 strategies, honest risk labels)
- *   3. Configuration field guide
- *   4. Mandatory risk disclosures (per CLAUDE.md)
- *   5. Live market + portfolio context (injected dynamically)
- *   6. Response guidelines
+ * Pass this with cache_control: { type: "ephemeral" } to Anthropic so it
+ * is cached for 5 minutes — turn 2+ of any conversation only sends the
+ * new user message and the small dynamic block below.
+ *
+ * Minimum cacheable size is 1 024 tokens (Sonnet); this prompt is ~2 500 tokens.
  */
-export function buildSystemPrompt(ctx: LiveContext): string {
+export function buildStaticSystemPrompt(): string {
   return `
 You are the Sonark AI copilot — an expert assistant for the Sonark automated strategy platform built on DeepBook Predict (Sui testnet).
 
@@ -165,6 +164,30 @@ MANDATORY RISK DISCLOSURES (always mention these when relevant)
 5. SMART CONTRACT RISK: All funds interact with on-chain contracts. Smart contract bugs could result in loss of funds.
 
 ══════════════════════════════════════════════
+RESPONSE GUIDELINES
+══════════════════════════════════════════════
+
+• Be direct and professional. Users are sophisticated enough to handle honest answers.
+• Use specific numbers from the live context when answering performance questions.
+• Always mention risk disclosures when discussing bettor strategies (⑤⑥⑦).
+• When recommending configuration, explain the tradeoff, not just the value.
+• If the user asks about APY or returns, explain that testnet numbers are modeled, not real.
+• For configuration questions, walk through the specific field impact with an example.
+• Keep responses concise unless the user asks for a deep explanation.
+• If you don't know something about a specific on-chain state (e.g. real-time price), say so rather than guessing.
+• When the user is paused/stopped due to drawdown/stop-loss, explain what happened clearly and what they need to do to resume.
+`.trim();
+}
+
+/**
+ * The small dynamic block: live market, portfolio, and leaderboard state.
+ * Assembled fresh on each request (30-second server cache). Not cached by Anthropic
+ * because it changes every call. Appended as a second system block after the
+ * cached static prompt.
+ */
+export function buildDynamicContext(ctx: LiveContext): string {
+  return `
+══════════════════════════════════════════════
 CURRENT MARKET STATE
 ══════════════════════════════════════════════
 ${formatMarketContext(ctx)}
@@ -178,21 +201,12 @@ ${formatPortfolioContext(ctx)}
 LEADERBOARD SNAPSHOT
 ══════════════════════════════════════════════
 ${formatLeaderboardContext(ctx)}
-
-══════════════════════════════════════════════
-RESPONSE GUIDELINES
-══════════════════════════════════════════════
-
-• Be direct and professional. Users are sophisticated enough to handle honest answers.
-• Use specific numbers from the context above when answering performance questions.
-• Always mention risk disclosures when discussing bettor strategies (⑤⑥⑦).
-• When recommending configuration, explain the tradeoff, not just the value.
-• If the user asks about APY or returns, explain that testnet numbers are modeled, not real.
-• For configuration questions, walk through the specific field impact with an example.
-• Keep responses concise unless the user asks for a deep explanation.
-• If you don't know something about a specific on-chain state (e.g. real-time price), say so rather than guessing.
-• When the user is paused/stopped due to drawdown/stop-loss, explain what happened clearly and what they need to do to resume.
 `.trim();
+}
+
+/** Convenience: full combined prompt (used by non-Anthropic paths if ever needed). */
+export function buildSystemPrompt(ctx: LiveContext): string {
+  return `${buildStaticSystemPrompt()}\n\n${buildDynamicContext(ctx)}`;
 }
 
 function formatMarketContext(ctx: LiveContext): string {
