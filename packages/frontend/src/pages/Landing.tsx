@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ArrowRight, Shield, Zap, Lock, Database,
-  Archive, Copy, CheckCircle, Users,
+  ArrowRight, Lock, Copy, CheckCircle, Users,
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { LandingHeader } from '@/components/layout/Header'
@@ -126,27 +125,28 @@ const STEPS = [
 const POWERED_BY = [
   {
     name: 'Sui',
-    Icon: Zap,
-    color: '#4DA2FF',
+    logo: '/sui%20logo.png',
     desc: 'Every keeper cycle is a Sui transaction — on-chain and verifiable',
   },
   {
     name: 'DeepBook',
-    Icon: Database,
-    color: '#A9A8EC',
+    logo: '/deepbook.jpeg',
     desc: 'Predict protocol for strategies · Spot order book for delta hedging',
   },
   {
     name: 'Seal',
-    Icon: Shield,
-    color: '#3DD68C',
+    logo: '/seal.png',
     desc: 'Threshold encryption for private strategy configurations',
   },
   {
     name: 'Walrus',
-    Icon: Archive,
-    color: '#E8A627',
+    logo: '/walrus.jpeg',
     desc: 'Decentralized storage for strategy configs and tamper-proof daily audit snapshots',
+  },
+  {
+    name: 'zkLogin',
+    logo: '/zklogin.avif',
+    desc: 'Sign in with Google — no wallet extension required, just your Google account',
   },
 ]
 
@@ -722,30 +722,26 @@ export default function Landing() {
             </h2>
           </motion.div>
 
-          {/* 2×2 grid with divider lines */}
-          <div className="grid grid-cols-1 sm:grid-cols-2">
-            {POWERED_BY.map(({ name, Icon, color, desc }, i) => (
+          {/* 3-column grid with divider lines (5 items: 3+2) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 overflow-hidden">
+            {POWERED_BY.map(({ name, logo, desc }, i) => (
               <motion.div
                 key={name}
                 initial={{ opacity: 0, y: 10 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.09, duration: 0.45 }}
+                transition={{ delay: i * 0.08, duration: 0.45 }}
                 className="p-8 md:p-12"
                 style={{
                   borderTop: '1px solid rgba(0,0,0,0.08)',
-                  borderRight: i % 2 === 0 ? '1px solid rgba(0,0,0,0.08)' : 'none',
+                  borderRight: '1px solid rgba(0,0,0,0.08)',
                 }}
               >
-                <div
-                  className="w-10 h-10 rounded-lg flex items-center justify-center mb-6"
-                  style={{
-                    background: `${color}18`,
-                    border: `1px solid ${color}30`,
-                  }}
-                >
-                  <Icon className="w-5 h-5" style={{ color }} />
-                </div>
+                <img
+                  src={logo}
+                  alt={name}
+                  className="h-10 w-auto object-contain mb-6"
+                />
                 <div
                   className="text-2xl font-display font-semibold mb-3 tracking-tight"
                   style={{ color: '#121213' }}
