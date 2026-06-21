@@ -1,6 +1,6 @@
 # Sonark
 
-**Automated strategy vaults for DeepBook Predict. Configure your own strategy or copy the best — the keeper handles everything else.**
+**The strategy platform for DeepBook Predict. Configure your strategy or copy the best — the keeper handles everything else.**
 
 [Live App →](https://sonark.vercel.app) · [Demo Video →]([DEMO_VIDEO_URL]) · [View on Suivision →](https://testnet.suivision.xyz/object/0x062dcd2484c1d9b1b32c26da60d3336c1aca854c5f15bacc81f29f6842a3d309)
 

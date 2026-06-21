@@ -6,16 +6,16 @@ export default function Introduction() {
     <DocPage
       section={getSectionForSlug('introduction')}
       title="Introduction"
-      tagline="Automated strategy execution on DeepBook Predict."
+      tagline="The strategy platform for DeepBook Predict."
     >
       <H2>What is Sonark?</H2>
       <P>
-        Sonark is a no-code platform for building, deploying, and copying automated trading strategies
-        on <Strong>DeepBook Predict</Strong> — a vol-surface-priced prediction protocol on Sui that
-        prices every strike and expiry against a live SVI volatility surface with sub-hour settlement
-        cycles. Sonark wraps that protocol with an automated keeper, risk controls, an on-chain
-        permission model, and a copy-trading layer so users can participate without manually managing
-        positions.
+        Sonark is the strategy platform for <Strong>DeepBook Predict</Strong> — built for three types
+        of users: passive investors who want automated yield without managing positions, copy traders
+        who want to mirror proven strategies with a verified on-chain track record, and sophisticated
+        creators who want infrastructure to publish their edge and earn copy fees. Every strategy runs
+        inside an automated vault; the keeper handles every expiry cycle so users never need to
+        manually redeem, roll, or hedge.
       </P>
       <P>
         Every Sonark strategy runs inside a <Strong>vault</Strong>: a smart contract that holds pooled
