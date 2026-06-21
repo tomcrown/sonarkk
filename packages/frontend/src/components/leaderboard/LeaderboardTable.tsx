@@ -7,6 +7,14 @@ import { StrategyBadge } from '@/components/common/StrategyBadge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 
+function displayReturn(pct: number | null): string {
+  return pct != null ? formatPct(pct) : '—'
+}
+
+function displayApy(pct: number | null): string {
+  return pct != null ? formatApy(pct) : '—'
+}
+
 interface LeaderboardTableProps {
   entries: LeaderboardEntry[]
   onCopy?: (entry: LeaderboardEntry) => void
@@ -75,13 +83,13 @@ export function LeaderboardTable({ entries, onCopy }: LeaderboardTableProps) {
               {/* Return */}
               <td className="py-3.5 pr-4">
                 <span className={`text-sm font-semibold ${(entry.totalReturnPct ?? 0) >= 0 ? 'text-[#3DD68C]' : 'text-[#F04438]'}`}>
-                  {entry.totalReturnPct != null ? formatPct(entry.totalReturnPct) : '—'}
+                  {displayReturn(entry.totalReturnPct)}
                 </span>
               </td>
 
               {/* APY */}
               <td className="py-3.5 pr-4">
-                <span className="text-sm text-[#9191A4]">{entry.rollingApyPct != null ? formatApy(entry.rollingApyPct) : '—'}</span>
+                <span className="text-sm text-[#9191A4]">{displayApy(entry.rollingApyPct)}</span>
               </td>
 
               {/* Cycles */}

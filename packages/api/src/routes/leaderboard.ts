@@ -56,7 +56,7 @@ leaderboardRouter.get('/', async (req, res) => {
       }),
     ]);
 
-    const response = entries.map(e => {
+    const response = entries.map((e, idx) => {
       let allocations: unknown[] = [];
       try { allocations = JSON.parse(e.vaultConfig.allocations) as unknown[]; } catch { /* ignore */ }
 
@@ -73,7 +73,7 @@ leaderboardRouter.get('/', async (req, res) => {
       const totalCycles = e.totalCycles > 0 ? e.totalCycles : portfolioCycleCount;
 
       return {
-        rank:              e.rank,
+        rank:              idx + 1,
         vault_config_id:   e.vaultConfigId,
         name:              e.vaultConfig.name,
         creator:           e.vaultConfig.creatorAddress,

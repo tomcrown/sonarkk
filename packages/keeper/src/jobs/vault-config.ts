@@ -173,13 +173,21 @@ export async function runVaultLeaderboardJob(
 
   log.info({ count: vaultConfigs.length }, 'running vault leaderboard job');
 
-  const entries: Array<{ vaultConfigId: string; combinedTvlRaw: bigint; copierCount: number; totalCycles: number; successfulCycles: number }> = [];
+  const entries: Array<{
+    vaultConfigId: string;
+    combinedTvlRaw: bigint;
+    totalReturnPct: number | null;
+    rollingApyPct: number | null;
+    copierCount: number;
+    totalCycles: number;
+    successfulCycles: number;
+  }> = [];
 
   for (const vc of vaultConfigs) {
     try {
       const { totalNavRaw } = await computeVaultConfigNav(client, keeperAddress, vc.id);
 
-      // Sum cycle counts across constituent portfolios.
+      // Sum cycle counts and initial deposits across constituent portfolios.
       const portfolioIds = vc.portfolios.map(p => p.id);
       const cycleCounts = await prisma.keeperCycle.groupBy({
         by: ['portfolioId'],
@@ -194,9 +202,34 @@ export async function runVaultLeaderboardJob(
       const totalCycles = cycleCounts.reduce((s, r) => s + r._count._all, 0);
       const successfulCycles = successCounts.reduce((s, r) => s + r._count._all, 0);
 
+      // Compute return: (currentNAV - initialDeposit) / initialDeposit × 100
+      const initialDepositRaw = vc.portfolios.reduce((s, p) => s + p.totalDepositedRaw, 0n);
+      let totalReturnPct: number | null = null;
+      let rollingApyPct: number | null = null;
+
+      if (initialDepositRaw > 0n && totalNavRaw > 0n) {
+        totalReturnPct = Number(totalNavRaw - initialDepositRaw) / Number(initialDepositRaw) * 100;
+
+        // Annualize over period from first cycle to now.
+        const firstCycle = await prisma.keeperCycle.findFirst({
+          where: { portfolioId: { in: portfolioIds } },
+          orderBy: { createdAt: 'asc' },
+          select: { createdAt: true },
+        });
+        if (firstCycle) {
+          const periodDays = (Date.now() - firstCycle.createdAt.getTime()) / (1000 * 60 * 60 * 24);
+          if (periodDays >= 1) {
+            const r = totalReturnPct / 100;
+            rollingApyPct = (Math.pow(1 + r, 365 / periodDays) - 1) * 100;
+          }
+        }
+      }
+
       entries.push({
         vaultConfigId: vc.id,
         combinedTvlRaw: totalNavRaw,
+        totalReturnPct,
+        rollingApyPct,
         copierCount: vc._count.copies,
         totalCycles,
         successfulCycles,
@@ -206,8 +239,14 @@ export async function runVaultLeaderboardJob(
     }
   }
 
-  // Rank by TVL descending.
-  entries.sort((a, b) => (b.combinedTvlRaw > a.combinedTvlRaw ? 1 : -1));
+  // Rank by totalReturnPct descending (nulls last), TVL as tiebreaker.
+  entries.sort((a, b) => {
+    if (a.totalReturnPct === null && b.totalReturnPct === null)
+      return b.combinedTvlRaw > a.combinedTvlRaw ? 1 : -1;
+    if (a.totalReturnPct === null) return 1;
+    if (b.totalReturnPct === null) return -1;
+    return b.totalReturnPct - a.totalReturnPct;
+  });
 
   for (let rank = 0; rank < entries.length; rank++) {
     const entry = entries[rank]!;
@@ -216,6 +255,8 @@ export async function runVaultLeaderboardJob(
       update: {
         rank: rank + 1,
         combinedTvlRaw: entry.combinedTvlRaw,
+        totalReturnPct: entry.totalReturnPct,
+        rollingApyPct: entry.rollingApyPct,
         copierCount: entry.copierCount,
         totalCycles: entry.totalCycles,
         successfulCycles: entry.successfulCycles,
@@ -225,6 +266,8 @@ export async function runVaultLeaderboardJob(
         vaultConfigId: entry.vaultConfigId,
         rank: rank + 1,
         combinedTvlRaw: entry.combinedTvlRaw,
+        totalReturnPct: entry.totalReturnPct,
+        rollingApyPct: entry.rollingApyPct,
         copierCount: entry.copierCount,
         totalCycles: entry.totalCycles,
         successfulCycles: entry.successfulCycles,
