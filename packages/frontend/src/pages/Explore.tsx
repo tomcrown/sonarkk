@@ -385,7 +385,7 @@ export default function Explore() {
       <p className="text-muted-foreground mb-12">Build, test, and deploy automated strategies on DeepBook Predict.</p>
 
       {/* ── Filter pills ─────────────────────────────────────────────── */}
-      <div className="flex items-center flex-wrap gap-2">
+      <div className="flex items-center flex-wrap gap-2 mb-4">
         {FILTER_LABELS.map(({ value, label }) => (
           <button
             key={value}

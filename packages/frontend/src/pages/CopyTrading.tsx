@@ -26,7 +26,7 @@ export default function CopyTrading() {
       {data?.caveat && <LeaderboardCaveat caveat={data.caveat} />}
 
       {/* Front runners */}
-      <div className="mb-12">
+      <div className="mb-12 mt-4">
         <div className="flex items-center justify-between mb-6">
           <div>
             <div className="text-[10px] tracking-[0.15em] text-accent mb-1">FRONT RUNNERS</div>

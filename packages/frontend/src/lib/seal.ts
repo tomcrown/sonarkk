@@ -82,10 +82,11 @@ export interface DecryptedVaultConfig {
   allocations: SealVaultConfig['allocations']
 }
 
-// ── Hex → bytes (browser-compatible, no Buffer dependency) ───────────────────
+// ── Hex → bytes ──────────────────────────────────────────────────────────────
 
 function hexToBytes(hex: string): number[] {
-  const padded = hex.padStart(64, '0')
+  const clean = hex.startsWith('0x') ? hex.slice(2) : hex
+  const padded = clean.padStart(64, '0')
   const bytes: number[] = []
   for (let i = 0; i < 32; i++) {
     bytes.push(parseInt(padded.slice(i * 2, i * 2 + 2), 16))
@@ -126,25 +127,14 @@ export async function encryptAndUpload(
 
 // ── Build Seal approval PTB ───────────────────────────────────────────────────
 //
-// Transaction.build() in @mysten/sui v2.x resolves unresolved object inputs by calling
-// client.core.getObjects() — which only exists on SuiGrpcClient, not on the dapp-kit
-// JSON-RPC client returned by useSuiClient().  To avoid the TypeError we pre-fetch the
-// object refs (version + digest) via the public JSON-RPC API, then supply fully-resolved
-// objectRef inputs so build() can serialise offline without touching the client.
-
-interface ObjectRef { objectId: string; version: string; digest: string }
-
-async function fetchObjectRef(
-  suiClient: { getObject: (args: { id: string; options: { showVersion: boolean; showDigest: boolean } }) => Promise<{ data?: { objectId?: string; version?: string; digest?: string } }> },
-  objectId: string,
-): Promise<ObjectRef> {
-  const resp = await suiClient.getObject({ id: objectId, options: { showVersion: true, showDigest: true } })
-  const d = resp.data
-  if (!d?.objectId || !d?.version || !d?.digest) {
-    throw new Error(`Could not resolve object ref for ${objectId}`)
-  }
-  return { objectId: d.objectId, version: d.version, digest: d.digest }
-}
+// The PTB is sent to Seal key servers which run devInspect to verify
+// seal_approve_copy_purchase doesn't abort. It must be valid BCS-encoded
+// TransactionData with real gas coins — a fake/all-zeros gas coin causes the
+// key server to respond "Invalid PTB: Invalid BCS" with a 403.
+//
+// SuiJsonRpcClient (from dapp-kit useSuiClient) has a .core property that is a
+// JSONRpcCoreClient which extends CoreClient. It supports getBalance, listCoins,
+// getCurrentSystemState etc., so Transaction.build({ client }) works fully.
 
 async function buildSealApprovePtb(
   suiClient: object,
@@ -162,43 +152,29 @@ async function buildSealApprovePtb(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const client = suiClient as any
 
-  // Pre-fetch object refs so Transaction.build() resolves inputs offline.
-  const [portfolioRef, ticketRef] = await Promise.all([
-    fetchObjectRef(client, portfolioObjectId),
-    fetchObjectRef(client, ticketObjectId),
-  ])
-
   const tx = new Transaction()
   tx.setSender(buyerAddress)
 
-  // Set explicit gas so coreClientResolveTransactionPlugin skips all network calls:
-  //   needsGasPrice=false, needsPayment=false, needsSimulateExpiration=false
-  // Non-empty payment also prevents setExpiration() from running.
-  // The Seal key server uses devInspect which does not validate actual gas coins.
+  // Explicit gas price + budget so Transaction.build() skips dry-run simulation
+  // (needsSimulateExpiration=false). Gas payment is left unset so the SDK fetches
+  // real SUI coins from the sender — this produces valid BCS the key server accepts.
   tx.setGasPrice(1000n)
   tx.setGasBudget(10_000_000n)
-  tx.setGasPayment([{
-    objectId: '0x0000000000000000000000000000000000000000000000000000000000000000',
-    version: '1',
-    digest: portfolioRef.digest, // borrow a real digest format; coin itself is irrelevant for devInspect
-  }])
 
   tx.moveCall({
     target: `${packageId}::portfolio::seal_approve_copy_purchase`,
     typeArguments: [dusdcType],
     arguments: [
       tx.pure.vector('u8', idBytes),
-      tx.objectRef(portfolioRef),
-      tx.objectRef(ticketRef),
+      tx.object(portfolioObjectId),
+      tx.object(ticketObjectId),
     ],
   })
 
-  // Pass an empty object as client so getClient() doesn't throw.
-  // client.core is undefined → resolveTransactionPlugin short-circuits via ?.
-  // All resolver conditions are false (gas explicit, objects pre-resolved, no UnresolvedPure)
-  // so no method on client.core is ever called.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return await tx.build({ client: {} as any })
+  // Build with the real SuiClient so gas coins are resolved from the sender's
+  // account and all object refs are properly fetched. This is the only approach
+  // that produces BCS bytes the Seal key server accepts.
+  return await tx.build({ client })
 }
 
 // ── Decrypt ───────────────────────────────────────────────────────────────────
