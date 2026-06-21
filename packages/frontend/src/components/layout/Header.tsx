@@ -29,20 +29,20 @@ export function LandingHeader() {
     <header className="fixed top-0 inset-x-0 z-50 h-20 flex items-center justify-between px-8 md:px-16">
       <div className="flex items-center gap-8 text-sm">
         <a
-          href="https://twitter.com"
+          href="https://x.com/SonarkonSui"
           target="_blank"
           rel="noopener noreferrer"
           className="text-muted-foreground hover:text-foreground transition-colors"
         >
-          Twitter
+          X(Twitter)
         </a>
         <a
-          href="https://discord.com"
+          href="https://github.com/tomcrown/sonarkk"
           target="_blank"
           rel="noopener noreferrer"
           className="text-muted-foreground hover:text-foreground transition-colors"
         >
-          Discord
+          Github
         </a>
       </div>
 
