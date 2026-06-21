@@ -2,7 +2,8 @@
 // Run: pnpm --filter @sonarkk/core exec prisma db push
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 // DATABASE_URL must be a PostgreSQL connection string.

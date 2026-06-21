@@ -1,5 +1,8 @@
 FROM node:20-alpine
 
+# Prisma query engine (linux-musl-openssl-3.0.x) requires libssl
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
 # Copy manifests first (layer-cached until deps change)
