@@ -816,13 +816,34 @@ export default function Landing() {
                 Launch app <ArrowRight className="w-4 h-4" />
               </span>
             </MotionLink>
+
+            <div className="mt-5">
+              <a
+                href="https://sonark-pitch-deck.lovable.app/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm text-text-dim hover:text-accent-light transition-colors"
+              >
+                View pitch deck <ArrowRight className="w-3.5 h-3.5" />
+              </a>
+            </div>
           </motion.div>
         </div>
       </section>
 
       <footer className="border-t border-border px-8 py-10 flex items-center justify-between text-xs text-text-dim flex-wrap gap-4">
         <span>© 2026 Sonark Labs</span>
-        <span className="font-mono">v0.4 · Sui testnet</span>
+        <div className="flex items-center gap-5">
+          <a
+            href="https://sonark-pitch-deck.lovable.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-accent-light transition-colors"
+          >
+            Pitch deck
+          </a>
+          <span className="font-mono">v0.4 · Sui testnet</span>
+        </div>
       </footer>
     </div>
   )
