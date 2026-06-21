@@ -22,14 +22,16 @@ export const DOC_NAV: DocSection[] = [
       { slug: 'the-keeper',          label: 'The Keeper' },
       { slug: 'vault-share-tokens',  label: 'Vault & Share Tokens' },
       { slug: 'policy-cap',          label: 'PolicyCap & Authorization' },
+      { slug: 'copilot',             label: 'Sonark Copilot (AI)' },
     ],
   },
   {
     section: 'STRATEGIES',
     items: [
-      { slug: 'house-strategies',  label: 'House Strategies' },
-      { slug: 'bettor-strategies', label: 'Bettor Strategies' },
-      { slug: 'risk-parameters',   label: 'Risk Parameters' },
+      { slug: 'house-strategies',    label: 'House Strategies' },
+      { slug: 'bettor-strategies',   label: 'Bettor Strategies' },
+      { slug: 'margin-loop',         label: 'Margin Loop' },
+      { slug: 'risk-parameters',     label: 'Risk Parameters' },
     ],
   },
   {
@@ -43,10 +45,11 @@ export const DOC_NAV: DocSection[] = [
   {
     section: 'INFRASTRUCTURE',
     items: [
-      { slug: 'deepbook-predict', label: 'DeepBook Predict' },
-      { slug: 'deepbook-spot',    label: 'DeepBook Spot' },
-      { slug: 'seal-walrus',      label: 'Seal & Walrus' },
-      { slug: 'zklogin',          label: 'zkLogin' },
+      { slug: 'deepbook-predict',      label: 'DeepBook Predict' },
+      { slug: 'deepbook-spot',         label: 'DeepBook Spot' },
+      { slug: 'lending-and-leverage',  label: 'Lending & Leverage' },
+      { slug: 'seal-walrus',           label: 'Seal & Walrus' },
+      { slug: 'zklogin',               label: 'zkLogin' },
     ],
   },
   {

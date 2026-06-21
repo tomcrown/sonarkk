@@ -19,9 +19,12 @@ const PAGES: Record<string, React.LazyExoticComponent<() => JSX.Element>> = {
   'seal-encryption': lazy(() => import('./content/SealEncryption')),
   'deepbook-predict': lazy(() => import('./content/DeepBookPredict')),
   'deepbook-spot':   lazy(() => import('./content/DeepBookSpot')),
-  'seal-walrus':     lazy(() => import('./content/SealWalrus')),
-  'zklogin':         lazy(() => import('./content/ZkLogin')),
-  'glossary':        lazy(() => import('./content/Glossary')),
+  'seal-walrus':          lazy(() => import('./content/SealWalrus')),
+  'zklogin':              lazy(() => import('./content/ZkLogin')),
+  'copilot':              lazy(() => import('./content/Copilot')),
+  'margin-loop':          lazy(() => import('./content/MarginLoop')),
+  'lending-and-leverage': lazy(() => import('./content/LendingAndLeverage')),
+  'glossary':             lazy(() => import('./content/Glossary')),
 }
 
 export default function DocsLayout() {
