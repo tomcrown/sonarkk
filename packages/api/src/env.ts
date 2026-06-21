@@ -37,6 +37,9 @@ const schema = z.object({
   // MockLending and MockMargin shared object IDs (for PP + Margin Loop keeper-setup).
   MOCK_LENDING_ID: z.preprocess(v => v || undefined, z.string().optional()),
   MOCK_MARGIN_ID:  z.preprocess(v => v || undefined, z.string().optional()),
+
+  // Telegram bot integration. Optional — Telegram routes are disabled when absent.
+  TELEGRAM_BOT_TOKEN: z.preprocess(v => v || undefined, z.string().optional()),
 });
 
 export const env = schema.parse(process.env);

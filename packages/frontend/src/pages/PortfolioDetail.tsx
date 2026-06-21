@@ -1032,39 +1032,43 @@ export default function PortfolioDetail() {
       <RiskDisclosure strategyType={portfolio.strategyType} />
 
       {/* Stats */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard
-          label="NAV per Share"
-          value={latestNav != null ? formatNav(latestNav) : '—'}
-          subtitle="Normalized to 1e9 initial"
-          icon={TrendingUp as LucideIcon}
-          trend={
-            latestNav != null && BigInt(latestNav) > 1_000_000_000n
-              ? 'up'
-              : latestNav != null && BigInt(latestNav) < 1_000_000_000n
-              ? 'down'
-              : 'neutral'
-          }
-        />
-        <StatCard
-          label="Total Deposited"
-          value={formatDusdc(portfolio.totalDepositedRaw)}
-          subtitle="Principal in vault"
-          icon={DollarSign as LucideIcon}
-        />
-        <StatCard
-          label="Cycle Count"
-          value={String((portfolio.cycles ?? portfolio.recentCycles).length)}
-          subtitle="Keeper rounds executed"
-          icon={Activity as LucideIcon}
-        />
-        <StatCard
-          label="Last Active"
-          value={portfolio.lastKeeperRun ? formatDateTime(portfolio.lastKeeperRun) : 'Never'}
-          subtitle="Keeper last run"
-          icon={Clock as LucideIcon}
-        />
-      </div>
+      {(() => {
+        const depositedDusdc = Number(portfolio.totalDepositedRaw ?? '0') / 1e6
+        const returnPct = portfolio.totalReturnPct ?? 0
+        const currentValueDusdc = depositedDusdc * (1 + returnPct / 100)
+        const pnlDusdc = currentValueDusdc - depositedDusdc
+        const pnlPositive = pnlDusdc >= 0
+        return (
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+            <StatCard
+              label="Current Value"
+              value={`${currentValueDusdc.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })} DUSDC`}
+              subtitle={`Deposited: ${depositedDusdc.toFixed(2)} DUSDC`}
+              icon={DollarSign as LucideIcon}
+              trend={pnlDusdc > 0 ? 'up' : pnlDusdc < 0 ? 'down' : 'neutral'}
+            />
+            <StatCard
+              label="Profit / Loss"
+              value={`${pnlPositive ? '+' : ''}${pnlDusdc.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })} DUSDC`}
+              subtitle={`${pnlPositive ? '+' : ''}${returnPct.toFixed(4)}% all-time`}
+              icon={TrendingUp as LucideIcon}
+              trend={pnlDusdc > 0 ? 'up' : pnlDusdc < 0 ? 'down' : 'neutral'}
+            />
+            <StatCard
+              label="Cycle Count"
+              value={String((portfolio.cycles ?? portfolio.recentCycles).length)}
+              subtitle="Keeper rounds executed"
+              icon={Activity as LucideIcon}
+            />
+            <StatCard
+              label="Last Active"
+              value={portfolio.lastKeeperRun ? formatDateTime(portfolio.lastKeeperRun) : 'Never'}
+              subtitle="Keeper last run"
+              icon={Clock as LucideIcon}
+            />
+          </div>
+        )
+      })()}
 
       {/* PolicyCap expiry banner — shown when expiry is within 30 days or already passed */}
       {policyCapExpiryMs !== null && policyCapExpiryMs < Date.now() + 30 * 24 * 60 * 60 * 1000 && (

@@ -666,6 +666,43 @@ export const api = {
     get: () => apiFetch<SviSurfaceResponse>('/svi-surface'),
   },
 
+  telegram: {
+    getLinkCode: (walletAddress: string) =>
+      apiFetch<{ code: string; expires_at: string }>('/telegram/link-code', {
+        method: 'POST',
+        body: JSON.stringify({ wallet_address: walletAddress }),
+      }),
+
+    getStatus: (walletAddress: string) =>
+      apiFetch<{
+        linked: boolean
+        username?: string
+        preferences?: {
+          notifySupply: boolean
+          notifyError: boolean
+          notifyNavMilestone: boolean
+          notifyPolicyCap: boolean
+        }
+      }>(`/telegram/status?wallet=${encodeURIComponent(walletAddress)}`),
+
+    unlink: (walletAddress: string) =>
+      apiFetch<{ unlinked: boolean }>('/telegram/unlink', {
+        method: 'DELETE',
+        body: JSON.stringify({ wallet_address: walletAddress }),
+      }),
+
+    updatePreferences: (walletAddress: string, prefs: {
+      notifySupply?: boolean
+      notifyError?: boolean
+      notifyNavMilestone?: boolean
+      notifyPolicyCap?: boolean
+    }) =>
+      apiFetch<{ updated: boolean; preferences: Record<string, boolean> }>('/telegram/preferences', {
+        method: 'PATCH',
+        body: JSON.stringify({ wallet_address: walletAddress, ...prefs }),
+      }),
+  },
+
   vaultConfigs: {
     create: (body: {
       name: string

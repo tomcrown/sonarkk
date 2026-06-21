@@ -1,7 +1,7 @@
 import { NavLink, Link } from 'react-router-dom'
 import {
   LayoutDashboard, BarChart3, Trophy, Copy, Compass,
-  MessageSquare, FolderOpen, FlaskConical, X,
+  MessageSquare, FolderOpen, FlaskConical, X, Bell,
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { cn } from '@/lib/cn'
@@ -32,7 +32,8 @@ const NAV = [
   {
     section: 'AI',
     items: [
-      { to: '/copilot', icon: MessageSquare, label: 'Copilot' },
+      { to: '/copilot',       icon: MessageSquare, label: 'Copilot'       },
+      { to: '/notifications', icon: Bell,          label: 'Notifications' },
     ],
   },
 ]

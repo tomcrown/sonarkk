@@ -360,6 +360,39 @@ model WalrusSnapshot {
   @@index([snapshotDate])
 }
 
+// ---- Telegram notifications ----
+// One row per linked wallet. chatId is the Telegram chat ID to send messages to.
+model TelegramLink {
+  id            String   @id @default(cuid())
+  walletAddress String   @unique
+  chatId        String   @unique
+  username      String?
+  isActive      Boolean  @default(true)
+  // Notification preferences
+  notifySupply  Boolean  @default(true)   // supply cycle executed
+  notifyError   Boolean  @default(true)   // keeper error or skip
+  notifyNavMilestone Boolean @default(false) // NAV moves > 0.1%
+  notifyPolicyCap    Boolean @default(true)  // PolicyCap expiry warning
+  linkedAt      DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([walletAddress])
+}
+
+// One-time codes used to link a Telegram account to a wallet address.
+// The user generates a code in the app, sends it to the bot, bot verifies and links.
+model TelegramLinkCode {
+  id            String   @id @default(cuid())
+  walletAddress String
+  code          String   @unique
+  expiresAt     DateTime
+  used          Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([walletAddress])
+  @@index([code])
+}
+
 // ---- Phase 7: Margin Loop strategy state ----
 // Tracks the active borrow position for the MARGIN_LOOP strategy.
 // One row per portfolio while a margin borrow is active.

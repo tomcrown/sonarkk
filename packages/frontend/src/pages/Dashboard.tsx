@@ -356,10 +356,12 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <div className="flex items-center gap-4 shrink-0">
-                    {item.cyclePnlPct != null && (
+                    {item.cyclePnlPct != null && Math.abs(item.cyclePnlPct) >= 0.001 ? (
                       <span className={`text-xs font-mono font-medium ${pnlPositive ? 'text-success' : 'text-danger'}`}>
                         {pnlPositive ? '+' : ''}{item.cyclePnlPct.toFixed(3)}%
                       </span>
+                    ) : (
+                      <span className="text-xs font-mono text-text-dim">—</span>
                     )}
                     <span className="text-xs text-text-dim w-14 text-right">{timeAgo(item.createdAt)}</span>
                     {item.txDigest && (

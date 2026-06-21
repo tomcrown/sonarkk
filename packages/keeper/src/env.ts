@@ -59,6 +59,9 @@ const keeperEnvSchema = z.object({
 
   DATABASE_URL: z.string().optional(),
 
+  // Telegram bot token — optional. When set, keeper sends notifications to linked wallets.
+  TELEGRAM_BOT_TOKEN: z.preprocess(v => v || undefined, z.string().optional()),
+
   // MockLending shared object ID (deployed by setup.ts, used by strategy ④).
   // Required for PRINCIPAL_PROTECTED portfolios.
   MOCK_LENDING_ID: z.string().optional(),

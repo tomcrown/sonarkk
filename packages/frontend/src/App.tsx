@@ -33,6 +33,7 @@ import Copilot from '@/pages/Copilot'
 import Portfolios from '@/pages/Portfolios'
 import PortfolioDetail from '@/pages/PortfolioDetail'
 import Backtest from '@/pages/Backtest'
+import Notifications from '@/pages/Notifications'
 
 const DocsLayout = lazy(() => import('@/pages/docs/DocsLayout'))
 
@@ -68,6 +69,7 @@ export default function App() {
         <Route path="/portfolios" element={<Portfolios />} />
         <Route path="/portfolios/:id" element={<PortfolioDetail />} />
         <Route path="/backtest" element={<Backtest />} />
+        <Route path="/notifications" element={<Notifications />} />
       </Route>
 
       {/* Catch-all */}
