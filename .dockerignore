@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+**/dist
+**/.cache
+packages/frontend
+packages/keeper
+contracts
+reports
+.env
+.env.*
+*.md
+.git
+.DS_Store
+packages/core/prisma/dev.db
+packages/core/prisma/migration-data.json

@@ -18,7 +18,11 @@
     "test": "vitest run",
     "smoke": "tsx src/smoke.ts",
     "integration-phase2": "tsx src/integration-test-phase2.ts",
-    "verify-phase3": "tsx src/verify-phase3.ts"
+    "verify-phase3": "tsx src/verify-phase3.ts",
+    "migrate:export": "tsx src/migrate-export.ts",
+    "migrate:import": "tsx src/migrate-import.ts",
+    "db:push": "prisma db push",
+    "db:generate": "prisma generate"
   },
   "dependencies": {
     "@mysten/deepbook-v3": "^1.4.1",

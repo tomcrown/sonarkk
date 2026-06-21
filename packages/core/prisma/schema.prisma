@@ -5,11 +5,13 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// Local/CI: provider=sqlite, DATABASE_URL="file:./dev.db"
-// Production (Supabase): change provider to "postgresql" and set DATABASE_URL.
+// DATABASE_URL must be a PostgreSQL connection string.
+// Supabase: Settings → Database → Connection string (Transaction mode, port 6543)
+// Local dev: use Supabase local branch or any PostgreSQL instance.
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ---- Strategy registry ----

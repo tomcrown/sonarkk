@@ -10,6 +10,7 @@ contracts/*/.move/
 
 # Prisma
 packages/core/prisma/dev.db
+packages/core/prisma/migration-data.json
 
 # IDE
 .vscode/
