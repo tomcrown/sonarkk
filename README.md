@@ -8,7 +8,7 @@
 
 ## The problem
 
-DeepBook Predict runs on sub-hour expiries. Positions don't sit there earning — they expire, settle, and need rolling every cycle, around the clock. Participating properly means either building keeper infrastructure yourself or watching charts at 3am.
+DeepBook Predict runs on sub-hour expiries. Positions don't sit there earning — they expire, settle, and need rolling every cycle, around the clock. Participating at any meaningful scale means either building keeper infrastructure yourself or managing every expiry manually — settling positions, rolling ranges, re-deploying capital — on a sub-hour cycle, around the clock.
 
 And if you actually understand the vol surface and have edge — there is nowhere to publish your strategy, share a verified track record, or earn from other people copying you.
 
@@ -16,9 +16,11 @@ Sonark fixes both.
 
 ## What it does
 
-Sonark is a no-code strategy vault platform built on DeepBook Predict. Deposit dUSDC into any of seven automated strategies and the keeper handles every supply cycle, range mint, settlement, and delta hedge — without you touching anything.
+Sign in with Google, pick a strategy, deposit dUSDC, and walk away. No wallet setup, no seed phrase, no watching expiries — the keeper handles every settlement cycle, supply, delta hedge, and roll automatically. You open the app when you feel like checking on it.
 
-If you'd rather skip the setup, browse the leaderboard, verify a creator's on-chain performance history, and mirror their exact strategy in one click. Sophisticated users get full parameter control — utilization target, strike selection, hedge ratio, drawdown pause threshold — and can publish their strategy to earn copy fees while keeping the configuration private.
+If you don't want to configure anything, the leaderboard shows every creator's full performance history — written to Walrus and independently verifiable by anyone with a URL, not just what Sonark reports. Find a track record you trust, pay a one-time copy fee, and run the same strategy under your own vault. Same keeper, your funds, your withdrawals.
+
+If you have edge — a view on volatility, a calibrated parameter set, a strategy that works — Sonark gives you the infrastructure to publish it and get paid. Encrypt your configuration with Seal so copiers get access without seeing the logic, earn fees automatically, and build a verified track record on-chain. The copy trading marketplace for on-chain prediction strategies didn't exist. Now it does.
 
 ## How it uses Sui
 
@@ -151,7 +153,11 @@ Walrus Snapshot:      5kp54YnnQ73o6phgXW13QNSL08PeJn1JiymmEJ8UNB8
 
 ## What's next
 
-Mainnet launch alongside DeepBook Predict's mainnet deployment — the contracts, keeper, and copy trading marketplace deploy directly with no architectural changes needed. Real trader flow replaces synthetic volume modeling for the house strategy backtest. Cross-venue vol arb goes live once live Polymarket and Hyperliquid price feeds are connected.
+Mainnet on day one. DeepBook Predict's mainnet deployment is the trigger — Sonark's contracts, keeper, and copy trading marketplace are production-ready and redeploy without architectural changes. The first real creators publish verified track records. The copy trading economy goes from infrastructure to live.
+
+Once real trader flow exists on-chain, the house strategy backtest switches from modeled volume to live data and the leaderboard becomes a genuine performance record, not a simulation. Cross-venue vol arb goes live with Polymarket and Hyperliquid price feeds connected as reference sources.
+
+Longer term: share tokens become collateral in DeepBook Margin, and the Principal Protected strategy's lending leg connects to iron_bank on mainnet — completing the full three-protocol composability stack that the margin loop strategy is already built for.
 
 ## License
 
