@@ -9,6 +9,8 @@ import { BracketCard } from '@/components/common/BracketCard'
 import FloatingLines from '@/components/ui/FloatingLines'
 import SplitText from '@/components/ui/SplitText'
 
+const MotionLink = motion(Link)
+
 // ─── Keeper terminal data ─────────────────────────────────────────────────────
 
 const KEEPER_LOGS = [
@@ -42,16 +44,16 @@ const KEEPER_STEPS = [
 
 const TRUST_MARKERS = [
   {
-    title: 'Crash-safe',
-    body: 'Already-processed cycles are skipped on restart — no double execution.',
+    title: 'Your key never leaves your hands',
+    body: 'You sign once to grant a bounded PolicyCap. The keeper can only interact with Predict, up to a ceiling you set, and it expires in 30 days. A compromised keeper key can never drain your wallet.',
   },
   {
     title: 'Automated risk controls',
-    body: 'Stop-loss and drawdown pause built in. Keeper halts new deployments if NAV drops past your threshold.',
+    body: 'Only a fraction of your balance deploys each cycle — the rest stays liquid DUSDC you can withdraw immediately. Stop-loss and drawdown pause halt new deployments if NAV falls past your threshold.',
   },
   {
     title: 'Revoke anytime',
-    body: 'PolicyCap enforced on-chain. Budget cap, expiry, instant revocation. Keeper can never move funds outside its defined scope.',
+    body: 'Destroy the PolicyCap and the keeper freezes instantly — no cooldown, no waiting. Your funds are never locked and the vault always has a keeper-independent exit.',
   },
 ]
 
@@ -306,24 +308,37 @@ export default function Landing() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 2.1, ease: 'easeOut' }}
             >
-              <Link
+              <MotionLink
                 to="/explore"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-accent-light to-accent text-background font-medium hover:opacity-90 transition-opacity"
+                className="group relative inline-flex items-center gap-2 px-6 py-3 rounded-full overflow-hidden bg-gradient-to-r from-accent-light to-accent text-background font-medium"
+                whileTap={{ scale: 0.97 }}
               >
-                Deploy a strategy <ArrowRight className="w-4 h-4" />
-              </Link>
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-500"
+                  style={{
+                    background:
+                      'linear-gradient(90deg, transparent 30%, rgba(255,255,255,0.22) 50%, transparent 70%)',
+                  }}
+                />
+                <span className="relative z-10 inline-flex items-center gap-2">
+                  Deploy a strategy <ArrowRight className="w-4 h-4" />
+                </span>
+              </MotionLink>
             </motion.div>
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 2.25, ease: 'easeOut' }}
             >
-              <Link
-                to="/leaderboard"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-full border border-border text-foreground hover:bg-card transition-colors"
-              >
-                Browse leaderboard
-              </Link>
+              <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                <Link
+                  to="/leaderboard"
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-full border border-border text-foreground hover:bg-surface-2 hover:border-accent/30 transition-colors"
+                >
+                  Browse leaderboard
+                </Link>
+              </motion.div>
             </motion.div>
           </div>
         </div>
@@ -336,26 +351,26 @@ export default function Landing() {
         <div className="grid lg:grid-cols-2 gap-16 items-start mb-16">
           {/* Steps */}
           <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
+            initial={{ opacity: 0, y: 28, scale: 0.98 }}
+            whileInView={{ opacity: 1, y: 0, scale: 1 }}
+            viewport={{ once: true, margin: '-40px' }}
+            transition={{ duration: 0.55, ease: [0.25, 0.46, 0.45, 0.94] }}
           >
             <h2 className="text-4xl md:text-5xl font-display tracking-tight text-gradient-accent leading-tight mb-6">
               Every expiry.<br />Every cycle.<br />Automatic.
             </h2>
             <p className="text-muted-foreground leading-relaxed mb-12">
-              DeepBook Predict settles sub-hour. Missing cycles is money left on the table. The keeper catches every one — crash-safe, bounded, and fully on-chain.
+              DeepBook Predict settles every 15–60 minutes. Without automation, you'd need to watch for oracle events, settle your own position, and submit a new trade within seconds — every single expiry. The keeper does all of it, automatically, with no wallet connection required after you deploy.
             </p>
 
             <div className="space-y-9">
               {KEEPER_STEPS.map((step, i) => (
                 <motion.div
                   key={step.n}
-                  initial={{ opacity: 0, x: -8 }}
+                  initial={{ opacity: 0, x: -22 }}
                   whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: i * 0.08, duration: 0.4 }}
+                  viewport={{ once: true, margin: '-40px' }}
+                  transition={{ delay: i * 0.1, duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
                   className="flex gap-5"
                 >
                   <span className="font-mono text-sm text-accent-light shrink-0 w-7 mt-0.5">
@@ -373,10 +388,10 @@ export default function Landing() {
 
           {/* Terminal */}
           <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5, delay: 0.15 }}
+            initial={{ opacity: 0, x: 32 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true, margin: '-40px' }}
+            transition={{ duration: 0.6, delay: 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}
           >
             <KeeperTerminal />
           </motion.div>
@@ -387,10 +402,10 @@ export default function Landing() {
           {TRUST_MARKERS.map((m, i) => (
             <motion.div
               key={m.title}
-              initial={{ opacity: 0, y: 8 }}
-              whileInView={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0, y: 18, scale: 0.96 }}
+              whileInView={{ opacity: 1, y: 0, scale: 1 }}
               viewport={{ once: true }}
-              transition={{ delay: i * 0.08, duration: 0.4 }}
+              transition={{ delay: i * 0.1, duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] }}
               className="rounded-xl border border-border bg-card/40 p-5"
             >
               <div className="flex items-center gap-2 mb-2">
@@ -407,10 +422,10 @@ export default function Landing() {
       <section className="py-24 md:py-32" style={{ background: 'var(--bg-surface)' }}>
         <div className="max-w-7xl mx-auto px-6 md:px-16">
           <motion.div
-            initial={{ opacity: 0, y: 12 }}
+            initial={{ opacity: 0, y: 28 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
+            transition={{ duration: 0.55, ease: [0.25, 0.46, 0.45, 0.94] }}
             className="mb-14"
           >
             <div className="text-xs tracking-[0.18em] text-text-dim mb-4">STRATEGIES</div>
@@ -438,10 +453,10 @@ export default function Landing() {
                 {HOUSE_STRATEGIES.map((s, i) => (
                   <motion.div
                     key={s.num}
-                    initial={{ opacity: 0, y: 8 }}
-                    whileInView={{ opacity: 1, y: 0 }}
+                    initial={{ opacity: 0, y: 22, scale: 0.97 }}
+                    whileInView={{ opacity: 1, y: 0, scale: 1 }}
                     viewport={{ once: true }}
-                    transition={{ delay: i * 0.07, duration: 0.35 }}
+                    transition={{ delay: i * 0.08, duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] }}
                     className="h-full"
                   >
                     <BracketCard className="h-full flex flex-col">
@@ -479,10 +494,10 @@ export default function Landing() {
                 {BETTOR_STRATEGIES.map((s, i) => (
                   <motion.div
                     key={s.num}
-                    initial={{ opacity: 0, y: 8 }}
-                    whileInView={{ opacity: 1, y: 0 }}
+                    initial={{ opacity: 0, x: 20, scale: 0.97 }}
+                    whileInView={{ opacity: 1, x: 0, scale: 1 }}
                     viewport={{ once: true }}
-                    transition={{ delay: i * 0.08, duration: 0.35 }}
+                    transition={{ delay: i * 0.1, duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] }}
                   >
                     <BracketCard className="flex flex-col">
                       <span
@@ -519,10 +534,10 @@ export default function Landing() {
       {/* ── 4. Copy + Seal ──────────────────────────────────────────────────── */}
       <section className="px-6 md:px-16 py-24 md:py-32 max-w-7xl mx-auto">
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
+          initial={{ opacity: 0, y: 28 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
+          transition={{ duration: 0.55, ease: [0.25, 0.46, 0.45, 0.94] }}
           className="mb-12"
         >
           <div className="text-xs tracking-[0.18em] text-text-dim mb-4">COPY TRADING</div>
@@ -534,10 +549,10 @@ export default function Landing() {
         <div className="grid lg:grid-cols-2 gap-6">
           {/* Copier — large card */}
           <motion.div
-            initial={{ opacity: 0, x: -12 }}
-            whileInView={{ opacity: 1, x: 0 }}
+            initial={{ opacity: 0, x: -28, scale: 0.97 }}
+            whileInView={{ opacity: 1, x: 0, scale: 1 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
+            transition={{ duration: 0.55, ease: [0.25, 0.46, 0.45, 0.94] }}
             className="h-full"
           >
             <BracketCard className="h-full flex flex-col">
@@ -588,10 +603,10 @@ export default function Landing() {
           {/* Creator + Seal — stacked */}
           <div className="flex flex-col gap-5">
             <motion.div
-              initial={{ opacity: 0, x: 12 }}
-              whileInView={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0, x: 28, scale: 0.97 }}
+              whileInView={{ opacity: 1, x: 0, scale: 1 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.5 }}
+              transition={{ duration: 0.55, ease: [0.25, 0.46, 0.45, 0.94] }}
             >
               <BracketCard>
                 <div className="flex items-center gap-3 mb-5">
@@ -618,10 +633,10 @@ export default function Landing() {
             </motion.div>
 
             <motion.div
-              initial={{ opacity: 0, x: 12 }}
+              initial={{ opacity: 0, x: 28 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: 0.1 }}
+              transition={{ duration: 0.5, delay: 0.12, ease: [0.25, 0.46, 0.45, 0.94] }}
               className="rounded-xl border p-6 flex-1"
               style={{
                 borderColor: 'rgba(169,168,236,0.15)',
@@ -646,10 +661,10 @@ export default function Landing() {
       <section className="py-24 md:py-32" style={{ background: 'var(--bg-surface)' }}>
         <div className="max-w-4xl mx-auto px-6 md:px-16">
           <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0, y: 28, scale: 0.97 }}
+            whileInView={{ opacity: 1, y: 0, scale: 1 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
+            transition={{ duration: 0.55, ease: [0.25, 0.46, 0.45, 0.94] }}
             className="text-center mb-16"
           >
             <div className="text-xs tracking-[0.18em] text-text-dim mb-4">GET STARTED</div>
@@ -662,10 +677,10 @@ export default function Landing() {
             {STEPS.map((step, i) => (
               <motion.div
                 key={step.num}
-                initial={{ opacity: 0, y: 8 }}
-                whileInView={{ opacity: 1, y: 0 }}
+                initial={{ opacity: 0, x: i % 2 === 0 ? -24 : 24 }}
+                whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.1, duration: 0.4 }}
+                transition={{ delay: i * 0.1, duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
                 className="flex items-start gap-8 py-8 border-b border-border last:border-0"
               >
                 <div
@@ -702,10 +717,10 @@ export default function Landing() {
         <div className="relative max-w-7xl mx-auto px-6 md:px-16 py-24 md:py-32">
           {/* Header */}
           <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0, y: 28, scale: 0.98 }}
+            whileInView={{ opacity: 1, y: 0, scale: 1 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
+            transition={{ duration: 0.55, ease: [0.25, 0.46, 0.45, 0.94] }}
             className="mb-16"
           >
             <div
@@ -727,10 +742,10 @@ export default function Landing() {
             {POWERED_BY.map(({ name, logo, desc }, i) => (
               <motion.div
                 key={name}
-                initial={{ opacity: 0, y: 10 }}
-                whileInView={{ opacity: 1, y: 0 }}
+                initial={{ opacity: 0, y: 22, scale: 0.96 }}
+                whileInView={{ opacity: 1, y: 0, scale: 1 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.08, duration: 0.45 }}
+                transition={{ delay: i * 0.08, duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] }}
                 className="p-8 md:p-12"
                 style={{
                   borderTop: '1px solid rgba(0,0,0,0.08)',
@@ -758,26 +773,51 @@ export default function Landing() {
       </section>
 
       {/* ── 7. CTA ──────────────────────────────────────────────────────────── */}
-      <section className="px-6 py-32 text-center max-w-3xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-        >
-          <h2 className="text-4xl md:text-6xl font-display tracking-tight text-gradient-accent">
-            Your strategy.<br />Your keeper.<br />Your keys.
-          </h2>
-          <p className="mt-6 text-muted-foreground text-lg">
-            Connect and deploy in minutes.
-          </p>
-          <Link
-            to="/dashboard"
-            className="mt-10 inline-flex items-center gap-2 px-7 py-3.5 rounded-full bg-gradient-to-r from-accent-light to-accent text-background font-medium hover:opacity-90 transition-opacity"
+      <section className="relative overflow-hidden px-6 py-36 text-center">
+        <FloatingLines
+          enabledWaves={['bottom', 'top', 'middle']}
+          lineCount={6}
+          lineDistance={16.5}
+          bendRadius={8}
+          bendStrength={-9.5}
+          interactive
+          parallax={true}
+          animationSpeed={1.6}
+          linesGradient={['#635f5f', '#6e61c1', '#262628']}
+        />
+        <div className="absolute inset-0 bg-background/50 pointer-events-none" />
+        <div className="relative z-10 max-w-3xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 32, scale: 0.97 }}
+            whileInView={{ opacity: 1, y: 0, scale: 1 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
           >
-            Launch app <ArrowRight className="w-4 h-4" />
-          </Link>
-        </motion.div>
+            <h2 className="text-4xl md:text-6xl font-display tracking-tight text-gradient-accent">
+              Your strategy.<br />Your keeper.<br />Your keys.
+            </h2>
+            <p className="mt-6 text-muted-foreground text-lg">
+              Connect and deploy in minutes.
+            </p>
+            <MotionLink
+              to="/dashboard"
+              className="group mt-10 relative inline-flex items-center gap-2 px-7 py-3.5 rounded-full overflow-hidden bg-gradient-to-r from-accent-light to-accent text-background font-medium"
+              whileTap={{ scale: 0.97 }}
+            >
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-500"
+                style={{
+                  background:
+                    'linear-gradient(90deg, transparent 30%, rgba(255,255,255,0.22) 50%, transparent 70%)',
+                }}
+              />
+              <span className="relative z-10 inline-flex items-center gap-2">
+                Launch app <ArrowRight className="w-4 h-4" />
+              </span>
+            </MotionLink>
+          </motion.div>
+        </div>
       </section>
 
       <footer className="border-t border-border px-8 py-10 flex items-center justify-between text-xs text-text-dim flex-wrap gap-4">
