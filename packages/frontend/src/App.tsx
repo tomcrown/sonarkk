@@ -21,6 +21,7 @@ function AuthCallback() {
     </div>
   )
 }
+import { lazy, Suspense } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import Landing from '@/pages/Landing'
 import Dashboard from '@/pages/Dashboard'
@@ -33,6 +34,8 @@ import Portfolios from '@/pages/Portfolios'
 import PortfolioDetail from '@/pages/PortfolioDetail'
 import Backtest from '@/pages/Backtest'
 
+const DocsLayout = lazy(() => import('@/pages/docs/DocsLayout'))
+
 export default function App() {
   return (
     <Routes>
@@ -42,6 +45,17 @@ export default function App() {
       {/* OAuth popup callback — must NOT redirect so the Enoki wallet can
           poll popup.location.hash for the #id_token fragment before closing */}
       <Route path="/auth/callback" element={<AuthCallback />} />
+
+      {/* Docs — standalone layout, no AppShell */}
+      <Route path="/docs" element={<Navigate to="/docs/introduction" replace />} />
+      <Route
+        path="/docs/:slug"
+        element={
+          <Suspense fallback={null}>
+            <DocsLayout />
+          </Suspense>
+        }
+      />
 
       {/* App shell wraps all authenticated pages */}
       <Route element={<AppShell />}>

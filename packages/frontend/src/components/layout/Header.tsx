@@ -66,9 +66,9 @@ export function LandingHeader() {
       </Link>
 
       <div className="flex items-center gap-6 text-sm">
-        <a href="#docs" className="text-muted-foreground hover:text-foreground transition-colors hidden md:inline">
+        <Link to="/docs" className="text-muted-foreground hover:text-foreground transition-colors hidden md:inline">
           Docs
-        </a>
+        </Link>
         <Link
           to="/dashboard"
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-accent-light to-accent text-background font-medium hover:opacity-90 transition-opacity"
