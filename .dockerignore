@@ -3,7 +3,6 @@ node_modules
 **/dist
 **/.cache
 packages/frontend
-packages/keeper
 contracts
 reports
 .env
