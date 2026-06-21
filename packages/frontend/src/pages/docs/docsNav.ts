@@ -16,6 +16,16 @@ export const DOC_NAV: DocSection[] = [
       { slug: 'quick-start',   label: 'Quick Start' },
     ],
   },
+    {
+    section: 'INFRASTRUCTURE',
+    items: [
+      { slug: 'deepbook-predict',      label: 'DeepBook Predict' },
+      { slug: 'deepbook-spot',         label: 'DeepBook Spot' },
+      { slug: 'lending-and-leverage',  label: 'Lending & Leverage' },
+      { slug: 'seal-walrus',           label: 'Seal & Walrus' },
+      { slug: 'zklogin',               label: 'zkLogin' },
+    ],
+  },
   {
     section: 'CORE CONCEPTS',
     items: [
@@ -43,13 +53,9 @@ export const DOC_NAV: DocSection[] = [
     ],
   },
   {
-    section: 'INFRASTRUCTURE',
+    section: 'PLATFORM',
     items: [
-      { slug: 'deepbook-predict',      label: 'DeepBook Predict' },
-      { slug: 'deepbook-spot',         label: 'DeepBook Spot' },
-      { slug: 'lending-and-leverage',  label: 'Lending & Leverage' },
-      { slug: 'seal-walrus',           label: 'Seal & Walrus' },
-      { slug: 'zklogin',               label: 'zkLogin' },
+      { slug: 'notifications', label: 'Notifications' },
     ],
   },
   {

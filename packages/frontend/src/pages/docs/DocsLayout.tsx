@@ -25,6 +25,7 @@ const PAGES: Record<string, React.LazyExoticComponent<() => JSX.Element>> = {
   'margin-loop':          lazy(() => import('./content/MarginLoop')),
   'lending-and-leverage': lazy(() => import('./content/LendingAndLeverage')),
   'glossary':             lazy(() => import('./content/Glossary')),
+  'notifications':        lazy(() => import('./content/Notifications')),
 }
 
 export default function DocsLayout() {

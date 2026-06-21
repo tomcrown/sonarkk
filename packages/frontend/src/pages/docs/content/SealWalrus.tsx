@@ -57,7 +57,7 @@ export default function SealWalrus() {
         <LI>Encrypted strategy config blobs are uploaded to Walrus at private strategy deploy time</LI>
         <LI>The Walrus blob ID is recorded on-chain (in the portfolio's Move object)</LI>
         <LI>When a copier initiates access, Sonark fetches the blob from Walrus using the blob ID</LI>
-        <LI>The keeper uses Walrus for daily audit snapshots — an immutable, tamper-proof record of NAV and cycle data</LI>
+        <LI>The keeper writes daily leaderboard snapshots to Walrus — an immutable, tamper-proof record of NAV and cycle data</LI>
       </UL>
       <H3>Why Walrus instead of IPFS or centralized storage</H3>
       <UL>
@@ -65,6 +65,41 @@ export default function SealWalrus() {
         <LI>Native Sui integration — blob IDs can be referenced in Move objects directly</LI>
         <LI>No dependency on Sonark infrastructure — the blob is accessible regardless of whether Sonark's servers are running</LI>
       </UL>
+
+      <H2>Verifiable leaderboard data</H2>
+      <P>
+        Sonark uses Walrus as a <Strong>proof layer</Strong> for leaderboard performance data. Every
+        day the keeper writes a snapshot of all portfolio NAVs, cycle counts, and vault TVLs to
+        Walrus as a JSON blob. Because Walrus is content-addressed, the blob ID is a SHA-256 hash
+        of the content — any alteration to the data would produce a completely different blob ID,
+        making tampering immediately detectable.
+      </P>
+      <H3>What each snapshot contains</H3>
+      <UL>
+        <LI>Snapshot date and generation timestamp</LI>
+        <LI>Per-portfolio: object ID, strategy type, NAV per share, total NAV, cycle count</LI>
+        <LI>Per-vault: combined TVL, cycle count, leaderboard rank</LI>
+        <LI>A caveat noting that performance is modeled on synthetic trader flow (testnet has minimal real volume)</LI>
+      </UL>
+      <H3>How to verify independently</H3>
+      <UL>
+        <LI>Every snapshot blob ID is shown in the <Strong>Analytics → Walrus Audit Trail</Strong> table</LI>
+        <LI>Click any blob ID to open it on <Strong>Walruscan</Strong> — a public explorer that fetches the blob directly from Walrus storage nodes without going through Sonark</LI>
+        <LI>Keeper-written snapshots also anchor an on-chain Sui transaction (the blob registration TX) — click the TX link to verify the blob was registered on Sui at that date</LI>
+        <LI>Alternatively, fetch any blob directly: <Strong>https://aggregator.walrus-testnet.walrus.space/v1/blobs/{"{blobId}"}</Strong></LI>
+      </UL>
+      <H3>On-chain anchoring vs HTTP upload</H3>
+      <P>
+        The keeper's daily snapshots use the full Walrus SDK flow: encode → register on-chain →
+        upload to storage nodes → certify. This creates a Sui blob object and a registration
+        transaction that permanently anchors the blob to a specific block. Snapshots captured
+        on-demand from the Analytics page use a simpler HTTP upload — the blob is content-addressed
+        and verifiable on Walruscan, but without an on-chain registration transaction.
+      </P>
+      <P>
+        For audit purposes the keeper's daily snapshots are the authoritative source. The on-demand
+        capture is provided for convenience and immediate verification during testing.
+      </P>
 
       <H2>The full private strategy lifecycle</H2>
       <P>
