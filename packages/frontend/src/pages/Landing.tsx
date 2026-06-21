@@ -336,7 +336,7 @@ export default function Landing() {
                   to="/leaderboard"
                   className="inline-flex items-center gap-2 px-6 py-3 rounded-full border border-border text-foreground hover:bg-surface-2 hover:border-accent/30 transition-colors"
                 >
-                  Browse leaderboard
+                  Browse marketplace
                 </Link>
               </motion.div>
             </motion.div>
