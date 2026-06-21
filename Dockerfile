@@ -21,18 +21,22 @@ COPY packages/backtest/src     ./packages/backtest/src
 COPY packages/backtest/tsconfig.json ./packages/backtest/
 COPY packages/api/src          ./packages/api/src
 COPY packages/api/tsconfig.json ./packages/api/
+COPY packages/keeper/src       ./packages/keeper/src
+COPY packages/keeper/tsconfig.json ./packages/keeper/
 
 # Generate Prisma client (platform-specific binary for Linux/Alpine)
 RUN cd packages/core && npx prisma generate
 
-# Build packages that the API imports from
+# Build all packages
 RUN npm run build --workspace=packages/core
 RUN npm run build --workspace=packages/backtest
-
-# Build the API itself
 RUN npm run build --workspace=packages/api
+RUN npm run build --workspace=packages/keeper
 
 EXPOSE 3001
 ENV NODE_ENV=production
 
+# Default: API server.
+# For the keeper service, override this in Railway with:
+#   node packages/keeper/dist/index.js
 CMD ["node", "packages/api/dist/index.js"]
