@@ -124,11 +124,17 @@ const PrefsSchema = z.object({
 
 telegramRouter.patch('/preferences', async (req, res) => {
   try {
-    const { wallet_address, ...prefs } = PrefsSchema.parse(req.body);
+    const { wallet_address, ...raw } = PrefsSchema.parse(req.body);
+    // Strip undefined values — exactOptionalPropertyTypes rejects `boolean | undefined` in Prisma data.
+    const data: Record<string, boolean> = {};
+    if (raw.notifySupply       !== undefined) data['notifySupply']       = raw.notifySupply;
+    if (raw.notifyError        !== undefined) data['notifyError']        = raw.notifyError;
+    if (raw.notifyNavMilestone !== undefined) data['notifyNavMilestone'] = raw.notifyNavMilestone;
+    if (raw.notifyPolicyCap    !== undefined) data['notifyPolicyCap']    = raw.notifyPolicyCap;
     const prisma = getPrismaClient();
     const updated = await prisma.telegramLink.update({
       where: { walletAddress: wallet_address },
-      data: prefs,
+      data,
     });
     res.json({ updated: true, preferences: {
       notifySupply:       updated.notifySupply,
