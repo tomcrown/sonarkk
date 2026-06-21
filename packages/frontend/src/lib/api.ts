@@ -17,10 +17,26 @@ export interface LeaderboardEntry {
   sealBlobId: string | null
 }
 
+export interface WalrusSnapshotRef {
+  date: string
+  blobId: string
+  suiEventDigest: string | null
+}
+
+export interface WalrusSnapshot {
+  id: string
+  date: string
+  blobId: string | null
+  suiEventDigest: string | null
+  writtenAt: string
+  writeError: string | null
+}
+
 export interface LeaderboardResponse {
   entries: LeaderboardEntry[]
   caveat: string
   total: number
+  latestWalrusSnapshot: WalrusSnapshotRef | null
 }
 
 // Internal raw shape returned by the /leaderboard endpoint
@@ -45,6 +61,7 @@ interface RawLeaderboardResponse {
   entries: RawLeaderboardEntry[]
   count: number
   caveat: string
+  latestWalrusSnapshot: WalrusSnapshotRef | null
 }
 
 // Internal raw shape returned by /backtest
@@ -159,6 +176,7 @@ function translateLeaderboardResponse(raw: RawLeaderboardResponse): LeaderboardR
     }),
     caveat: raw.caveat,
     total: raw.count,
+    latestWalrusSnapshot: raw.latestWalrusSnapshot ?? null,
   }
 }
 
@@ -796,4 +814,20 @@ export async function* streamChat(
   } finally {
     reader.releaseLock()
   }
+}
+
+// ── Walrus snapshots ──────────────────────────────────────────────────────────
+
+export async function fetchWalrusSnapshots(): Promise<WalrusSnapshot[]> {
+  const res = await fetch(`${API_BASE}/walrus/snapshots`)
+  if (!res.ok) throw new Error(`Failed to fetch Walrus snapshots: ${res.status}`)
+  const json = await res.json() as { snapshots: WalrusSnapshot[] }
+  return json.snapshots
+}
+
+export async function triggerWalrusSnapshot(): Promise<WalrusSnapshotRef> {
+  const res = await fetch(`${API_BASE}/walrus/snapshot`, { method: 'POST' })
+  const json = await res.json() as WalrusSnapshotRef & { error?: string }
+  if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
+  return json
 }

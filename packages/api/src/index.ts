@@ -25,6 +25,7 @@ import { leaderboardRouter } from './routes/leaderboard.js';
 import { portfolioRouter }   from './routes/portfolio.js';
 import { vaultConfigRouter } from './routes/vault-configs.js';
 import { telegramRouter }    from './routes/telegram.js';
+import { walrusRouter }      from './routes/walrus.js';
 
 const app = express();
 
@@ -45,6 +46,7 @@ app.use('/leaderboard',   leaderboardRouter);
 app.use('/portfolios',    portfolioRouter);
 app.use('/vault-configs', vaultConfigRouter);
 app.use('/telegram',      telegramRouter);
+app.use('/walrus',        walrusRouter);
 
 // Backtest + SVI surface routes are registered by Module C (imported at runtime).
 // They live in ./routes/backtest.ts and ./routes/svi-surface.ts

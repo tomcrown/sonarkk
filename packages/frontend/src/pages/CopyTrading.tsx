@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { formatPct, truncateAddress } from '@/lib/format'
 import { type LeaderboardEntry } from '@/lib/api'
 import { CopyTradingModal } from './CopyTradingModal'
+import { WalrusBadge } from '@/components/common/WalrusBadge'
 
 export default function CopyTrading() {
   const { data, isLoading } = useLeaderboard(20)
@@ -73,6 +74,18 @@ export default function CopyTrading() {
               ))}
         </div>
       </div>
+
+      {/* Walrus proof banner */}
+      {data?.latestWalrusSnapshot && (
+        <div className="mb-6 flex items-center gap-3 px-4 py-3 rounded-lg border border-teal-500/20 bg-teal-500/5">
+          <WalrusBadge
+            blobId={data.latestWalrusSnapshot.blobId}
+            date={data.latestWalrusSnapshot.date}
+            suiEventDigest={data.latestWalrusSnapshot.suiEventDigest}
+          />
+          <span className="text-[11px] text-text-dim">Leaderboard data anchored on Walrus — independently verifiable</span>
+        </div>
+      )}
 
       {/* Full board */}
       <div>

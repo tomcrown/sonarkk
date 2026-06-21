@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import {
   CheckCircle2, AlertTriangle, XCircle, ChevronDown, TrendingUp,
-  Bitcoin, Layers, Percent, Clock,
+  Bitcoin, Layers, Percent, Clock, Database, ExternalLink, RefreshCw,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useMarketContext } from '@/hooks/useMarketContext'
 import { useSviSurface } from '@/hooks/useSviSurface'
+import { useWalrusSnapshots, useTriggerWalrusSnapshot } from '@/hooks/useWalrusSnapshots'
 import { VolSurface } from '@/components/vol/VolSurface'
 import { BracketCard } from '@/components/common/BracketCard'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import { formatVol, formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/cn'
 
@@ -199,6 +201,8 @@ function ContextCard({
 export default function Analytics() {
   const { data: ctx, isLoading: ctxLoading } = useMarketContext()
   const { data: surfaceResp, isLoading: surfaceLoading } = useSviSurface()
+  const { data: snapshots, isLoading: snapsLoading } = useWalrusSnapshots()
+  const triggerSnapshot = useTriggerWalrusSnapshot()
   const [tradersExpanded, setTradersExpanded] = useState(false)
 
   const market      = ctx?.market
@@ -561,6 +565,125 @@ export default function Analytics() {
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* Walrus audit trail */}
+      <div className="mt-14">
+        <div className="text-[10px] tracking-[0.2em] text-text-dim mb-2">PROOF LAYER</div>
+        <div className="flex items-end justify-between mb-6">
+          <div>
+            <h2 className="text-2xl font-display">Walrus Audit Trail</h2>
+            <p className="text-sm text-text-dim mt-1">
+              Daily leaderboard snapshots written to Walrus — content-addressed and independently verifiable.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => triggerSnapshot.mutate()}
+            disabled={triggerSnapshot.isPending}
+            className="shrink-0 gap-1.5"
+          >
+            <RefreshCw className={cn('w-3.5 h-3.5', triggerSnapshot.isPending && 'animate-spin')} />
+            {triggerSnapshot.isPending ? 'Capturing…' : 'Capture Snapshot Now'}
+          </Button>
+        </div>
+
+        {triggerSnapshot.isSuccess && (
+          <div className="mb-4 flex items-center gap-2 text-sm text-teal-400 bg-teal-500/5 border border-teal-500/20 rounded-lg px-4 py-2.5">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>Snapshot captured — blob ID: </span>
+            <a
+              href={`https://walruscan.com/testnet/blob/${triggerSnapshot.data.blobId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-xs underline underline-offset-2 hover:text-teal-300 flex items-center gap-1"
+            >
+              {triggerSnapshot.data.blobId.slice(0, 20)}…
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+        )}
+
+        {triggerSnapshot.isError && (
+          <div className="mb-4 text-sm text-danger bg-danger/5 border border-danger/20 rounded-lg px-4 py-2.5">
+            Snapshot failed: {triggerSnapshot.error instanceof Error ? triggerSnapshot.error.message : 'unknown error'}
+          </div>
+        )}
+
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
+          {snapsLoading ? (
+            <div className="p-5 space-y-3">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-10" />)}
+            </div>
+          ) : !snapshots?.length ? (
+            <div className="p-8 text-center text-sm text-text-dim flex flex-col items-center gap-3">
+              <Database className="w-8 h-8 opacity-30" />
+              <span>No snapshots yet — click "Capture Snapshot Now" to create the first one.</span>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-surface-2/30">
+                  <th className="text-left px-5 py-3 text-[10px] tracking-[0.12em] text-text-dim font-medium">DATE</th>
+                  <th className="text-left px-5 py-3 text-[10px] tracking-[0.12em] text-text-dim font-medium">BLOB ID</th>
+                  <th className="text-left px-5 py-3 text-[10px] tracking-[0.12em] text-text-dim font-medium">ON-CHAIN TX</th>
+                  <th className="text-left px-5 py-3 text-[10px] tracking-[0.12em] text-text-dim font-medium">STATUS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {snapshots.map(s => (
+                  <tr key={s.id} className="hover:bg-surface-2/30 transition-colors">
+                    <td className="px-5 py-3 font-mono text-xs text-foreground">{s.date}</td>
+                    <td className="px-5 py-3">
+                      {s.blobId ? (
+                        <a
+                          href={`https://walruscan.com/testnet/blob/${s.blobId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 font-mono text-xs text-teal-400 hover:text-teal-300 transition-colors"
+                        >
+                          {s.blobId.slice(0, 22)}…
+                          <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                        </a>
+                      ) : (
+                        <span className="text-text-dim text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3">
+                      {s.suiEventDigest ? (
+                        <a
+                          href={`https://testnet.suivision.xyz/txblock/${s.suiEventDigest}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 font-mono text-xs text-text-dim hover:text-foreground transition-colors"
+                        >
+                          {s.suiEventDigest.slice(0, 14)}…
+                          <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                        </a>
+                      ) : (
+                        <span className="text-text-dim text-xs">HTTP upload</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3">
+                      {s.writeError ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-danger">
+                          <XCircle className="w-3 h-3" /> Failed
+                        </span>
+                      ) : s.blobId ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-teal-400">
+                          <CheckCircle2 className="w-3 h-3" /> Verified
+                        </span>
+                      ) : (
+                        <span className="text-xs text-text-dim">Pending</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </div>
   )

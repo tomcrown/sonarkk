@@ -31,29 +31,35 @@ leaderboardRouter.get('/', async (req, res) => {
 
   try {
     const prisma = getPrismaClient();
-    const entries = await prisma.vaultLeaderboardEntry.findMany({
-      orderBy: { rank: 'asc' },
-      take: limit,
-      include: {
-        vaultConfig: {
-          include: {
-            portfolios: {
-              where: { isActive: true },
-              select: {
-                totalDepositedRaw: true,
-                _count: { select: { cycles: true } },
+    const [entries, latestSnapshot] = await Promise.all([
+      prisma.vaultLeaderboardEntry.findMany({
+        orderBy: { rank: 'asc' },
+        take: limit,
+        include: {
+          vaultConfig: {
+            include: {
+              portfolios: {
+                where: { isActive: true },
+                select: {
+                  totalDepositedRaw: true,
+                  _count: { select: { cycles: true } },
+                },
               },
             },
           },
         },
-      },
-    });
+      }),
+      prisma.walrusSnapshot.findFirst({
+        where: { blobId: { not: null } },
+        orderBy: { snapshotDate: 'desc' },
+        select: { snapshotDate: true, blobId: true, suiEventDigest: true },
+      }),
+    ]);
 
     const response = entries.map(e => {
       let allocations: unknown[] = [];
       try { allocations = JSON.parse(e.vaultConfig.allocations) as unknown[]; } catch { /* ignore */ }
 
-      // Use job-computed TVL if available, otherwise fall back to sum of portfolio deposits
       const depositSum = e.vaultConfig.portfolios.reduce(
         (sum: bigint, p: { totalDepositedRaw: bigint }) => sum + p.totalDepositedRaw, 0n
       );
@@ -61,7 +67,6 @@ leaderboardRouter.get('/', async (req, res) => {
         ? e.combinedTvlRaw
         : depositSum;
 
-      // Use job-computed cycle count if available, otherwise sum from portfolios
       const portfolioCycleCount = e.vaultConfig.portfolios.reduce(
         (sum: number, p: { _count: { cycles: number } }) => sum + p._count.cycles, 0
       );
@@ -87,7 +92,11 @@ leaderboardRouter.get('/', async (req, res) => {
       };
     });
 
-    res.json({ entries: response, count: response.length, caveat: CAVEAT });
+    const snapshot = latestSnapshot
+      ? { date: latestSnapshot.snapshotDate, blobId: latestSnapshot.blobId!, suiEventDigest: latestSnapshot.suiEventDigest ?? null }
+      : null;
+
+    res.json({ entries: response, count: response.length, caveat: CAVEAT, latestWalrusSnapshot: snapshot });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: msg });
