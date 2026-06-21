@@ -30,7 +30,11 @@ export function ConnectPrompt({ title, description }: ConnectPromptProps) {
           </h2>
           <p className="text-sm text-[#58586A] max-w-sm">{description}</p>
         </div>
-        <Button onClick={() => setShowModal(true)} className="text-xs tracking-widest uppercase font-semibold">
+        <Button
+          variant="pill-outline"
+          onClick={() => setShowModal(true)}
+          className="rounded-full px-5 py-2.5 h-auto text-xs tracking-widest uppercase font-semibold shadow-none hover:shadow-none"
+        >
           <Wallet className="w-3.5 h-3.5" />
           Connect Wallet
         </Button>

@@ -32,7 +32,7 @@ export default function CopyTrading() {
             <div className="text-[10px] tracking-[0.15em] text-accent mb-1">FRONT RUNNERS</div>
             <h2 className="text-2xl font-display">Top strategies this season</h2>
           </div>
-          <Link to="/leaderboard" className="inline-flex items-center gap-1.5 text-xs text-accent-light hover:text-accent transition-colors">
+          <Link to="/marketplace" className="inline-flex items-center gap-1.5 text-xs text-accent-light hover:text-accent transition-colors">
             View top profile <ArrowRight className="w-3 h-3" />
           </Link>
         </div>

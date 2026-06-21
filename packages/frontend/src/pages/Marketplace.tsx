@@ -11,7 +11,7 @@ import { type LeaderboardEntry } from '@/lib/api'
 import { BETTOR_STRATEGIES, HOUSE_STRATEGIES } from '@/lib/constants'
 import { CopyTradingModal } from './CopyTradingModal'
 
-export default function Leaderboard() {
+export default function Marketplace() {
   const { data, isLoading, error } = useLeaderboard(50)
   const [copyTarget, setCopyTarget] = useState<LeaderboardEntry | null>(null)
 
@@ -25,7 +25,7 @@ export default function Leaderboard() {
   return (
     <div className="px-4 sm:px-6 lg:px-10 py-6 lg:py-12 max-w-[1600px]">
       <div className="text-xs tracking-[0.2em] text-text-dim mb-3">DISCOVER</div>
-      <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase mb-10">Leaderboard</h1>
+      <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight uppercase mb-10">Marketplace</h1>
 
       {/* Summary stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-12">
@@ -51,12 +51,12 @@ export default function Leaderboard() {
         </div>
       ) : error ? (
         <div className="rounded-xl border border-danger/20 bg-danger/5 p-6 text-center text-sm text-danger">
-          Failed to load leaderboard. Make sure the API server is running.
+          Failed to load marketplace. Make sure the API server is running.
         </div>
       ) : entries.length === 0 ? (
         <EmptyState
           icon={Trophy}
-          title="Leaderboard is empty"
+          title="Marketplace is empty"
           description="No strategies have been deployed and run yet. Deploy a strategy to appear here."
         />
       ) : (

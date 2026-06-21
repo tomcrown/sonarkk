@@ -31,9 +31,8 @@ export function WalletButton() {
       <>
         <Button
           variant="pill-outline"
-          size="sm"
           onClick={() => setShowModal(true)}
-          className="text-xs tracking-widest uppercase font-semibold"
+          className="rounded-full px-5 py-2.5 h-auto text-xs tracking-widest uppercase font-semibold shadow-none hover:shadow-none"
         >
           Connect Wallet
         </Button>

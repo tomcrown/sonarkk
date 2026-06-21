@@ -24,7 +24,7 @@ const NAV = [
   {
     section: 'DISCOVER',
     items: [
-      { to: '/leaderboard',  icon: Trophy,          label: 'Leaderboard'   },
+      { to: '/marketplace',  icon: Trophy,          label: 'Marketplace'   },
       { to: '/copy-trading', icon: Copy,            label: 'Copy Trading'  },
       { to: '/portfolios',   icon: FolderOpen,      label: 'My Portfolios' },
     ],

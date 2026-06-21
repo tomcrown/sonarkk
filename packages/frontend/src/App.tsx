@@ -26,7 +26,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import Landing from '@/pages/Landing'
 import Dashboard from '@/pages/Dashboard'
 import Analytics from '@/pages/Analytics'
-import Leaderboard from '@/pages/Leaderboard'
+import Marketplace from '@/pages/Marketplace'
 import CopyTrading from '@/pages/CopyTrading'
 import Explore from '@/pages/Explore'
 import Copilot from '@/pages/Copilot'
@@ -61,7 +61,7 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/analytics" element={<Analytics />} />
-        <Route path="/leaderboard" element={<Leaderboard />} />
+        <Route path="/marketplace" element={<Marketplace />} />
         <Route path="/copy-trading" element={<CopyTrading />} />
         <Route path="/explore" element={<Explore />} />
         <Route path="/copilot" element={<Copilot />} />
