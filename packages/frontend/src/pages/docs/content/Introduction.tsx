@@ -33,7 +33,7 @@ export default function Introduction() {
         market structure with:
       </P>
       <UL>
-        <LI>Sub-hour rolling BTC expiries — cycles every 15–60 minutes on testnet</LI>
+        <LI>Rolling BTC expiries that settle continuously throughout the day</LI>
         <LI>A PLP vault that takes the other side of every trade, providing always-present liquidity</LI>
         <LI>On-chain LP economics: vault utilization, spread mechanics, and payouts are all auditable</LI>
         <LI>Composable primitives — positions plug into the wider Sui DeFi stack (margin, lending, structured vaults)</LI>
@@ -66,7 +66,10 @@ export default function Introduction() {
 
       <H2>What Sonark adds</H2>
       <P>
-        DeepBook Predict settles every 15–60 minutes. Without automation, a user would need to:
+        DeepBook Predict runs on short-expiry cycles that settle continuously — positions expire,
+        settle, and need rolling around the clock. Miss one and your capital sits idle. Miss several
+        in a row and you're not running a strategy — you're just holding. Without automation, a user
+        would need to:
       </P>
       <UL>
         <LI>Watch for oracle settlement events</LI>

@@ -2,17 +2,17 @@
 
 **The strategy platform for DeepBook Predict. Configure your strategy or copy the best — the keeper handles everything else.**
 
-[Live App →](https://sonark.vercel.app) · [Demo Video →]([DEMO_VIDEO_URL]) · [View on Suivision →](https://testnet.suivision.xyz/object/0x062dcd2484c1d9b1b32c26da60d3336c1aca854c5f15bacc81f29f6842a3d309)
+[Live App →](https://sonark.vercel.app) · [Demo Video →](https://www.youtube.com/watch?v=NXTbP8SBmUg) · [View on Suivision →](https://testnet.suivision.xyz/object/0x062dcd2484c1d9b1b32c26da60d3336c1aca854c5f15bacc81f29f6842a3d309)
 
 ---
 
-## The problem
+## The Problem
 
-DeepBook Predict runs on sub-hour expiries. Positions don't sit there earning — they expire, settle, and need rolling every cycle, around the clock. Participating at any meaningful scale means either building keeper infrastructure yourself or managing every expiry manually — settling positions, rolling ranges, re-deploying capital — on a sub-hour cycle, around the clock.
+DeepBook Predict runs on short-expiry cycles that settle continuously — positions expire, settle, and need rolling around the clock. Participating means showing up at every expiry — redeem your position, roll your range, re-deploy capital — every day. Miss one and your capital sits idle. Miss several in a row and you're not running a strategy — you're just holding.
 
-And if you actually understand the vol surface and have edge — there is nowhere to publish your strategy, share a verified track record, or earn from other people copying you.
+That barrier doesn't just keep retail out. It means there's no critical mass of participants, which means there's no creator economy — no way for someone who genuinely understands the vol surface to publish their strategy, build a verifiable track record, and earn from people copying them. That market doesn't exist yet on any on-chain prediction protocol.
 
-Sonark fixes both.
+Sonark builds the infrastructure that makes both possible.
 
 ## What it does
 

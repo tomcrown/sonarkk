@@ -27,7 +27,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RiskDisclosure } from '@/components/common/RiskDisclosure'
 import {
-  STRATEGY_NAMES, STRATEGY_COLORS, BETTOR_STRATEGIES, HOUSE_STRATEGIES,
+  STRATEGY_NAMES, STRATEGY_COLORS, BETTOR_STRATEGIES,
 } from '@/lib/constants'
 import { useChainConfig } from '@/hooks/useChainConfig'
 import { api } from '@/lib/api'
@@ -339,10 +339,20 @@ export function VaultConfigModal({ defaultStrategyType = 0, defaultConfig1, open
   }
 
   const extractObjects = async (digest: string) => {
-    const tx = await suiClient.getTransactionBlock({
-      digest,
-      options: { showObjectChanges: true },
-    })
+    // Retry up to 8 times — RPC node may not have indexed the tx immediately after quorum
+    let tx: Awaited<ReturnType<typeof suiClient.getTransactionBlock>> | null = null
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        tx = await suiClient.getTransactionBlock({ digest, options: { showObjectChanges: true } })
+        break
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (!msg.includes('Could not find') && !msg.includes('not found')) throw err
+        if (attempt === 7) throw err
+        await new Promise(r => setTimeout(r, 1200 * (attempt + 1)))
+      }
+    }
+    if (!tx) throw new Error(`Transaction ${digest} not indexed after retries`)
     type ObjChange = { type: string; objectId?: string; objectType?: string }
     const changes = (tx.objectChanges ?? []) as ObjChange[]
     const portfolio = changes.find(
